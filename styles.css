@@ -1,8 +1,444 @@
-/*
+/* SVN Plugin Styles */
 
-This CSS file will be included with your plugin, and
-available in the app when your plugin is enabled.
+/* Status bar styling - minimal colored text only */
+.status-bar-item.svn-status-clean {
+    color: var(--text-success);
+}
 
-If your plugin does not need CSS, delete this file.
+.status-bar-item.svn-status-modified {
+    color: var(--text-warning);
+}
 
-*/
+.status-bar-item.svn-status-error {
+    color: var(--text-error);
+}
+
+/* Revision modal styling */
+.svn-revision-container {
+    max-height: 400px;
+    overflow-y: auto;
+    margin: 10px 0;
+}
+
+.svn-revision-item {
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    padding: 10px;
+    margin-bottom: 10px;
+    background: var(--background-secondary);
+}
+
+.svn-revision-item.svn-current {
+    border-color: var(--interactive-accent);
+    background: var(--background-modifier-hover);
+}
+
+.svn-revision-header {
+    margin-bottom: 8px;
+    font-size: 14px;
+}
+
+.svn-revision-header strong {
+    color: var(--text-accent);
+    margin-right: 8px;
+}
+
+.svn-revision-message {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin: 5px 0;
+    font-style: italic;
+    max-height: 60px;
+    overflow: hidden;
+    white-space: pre-wrap;
+}
+
+.svn-revision-buttons {
+    margin-top: 8px;
+    text-align: right;
+}
+
+.svn-revision-buttons button {
+    margin-left: 8px;
+    padding: 4px 12px;
+    font-size: 12px;
+}
+
+/* File History View styling */
+.svn-history-header {
+    padding: 10px;
+    border-bottom: 1px solid var(--background-modifier-border);
+    background: var(--background-secondary);
+}
+
+.svn-history-header h3 {
+    margin: 0;
+    color: var(--text-accent);
+}
+
+.svn-no-file, .svn-no-history {
+    text-align: center;
+    color: var(--text-muted);
+    font-style: italic;
+    padding: 20px;
+}
+
+.svn-history-entry {
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    padding: 12px;
+    margin-bottom: 12px;
+    background: var(--background-primary-alt);
+    transition: background-color 0.2s ease;
+}
+
+.svn-history-entry:hover {
+    background: var(--background-modifier-hover);
+}
+
+.svn-entry-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+    font-size: 13px;
+}
+
+.svn-revision-number {
+    font-weight: bold;
+    color: var(--text-accent);
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 11px;
+}
+
+.svn-author {
+    color: var(--text-normal);
+    margin-left: 8px;
+}
+
+.svn-date {
+    color: var(--text-muted);
+    font-size: 11px;
+    margin-left: auto;
+}
+
+.svn-message {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin: 8px 0;
+    padding: 6px;
+    background: var(--background-secondary);
+    border-radius: 3px;
+    white-space: pre-wrap;
+    line-height: 1.4;
+    max-height: 80px;
+    overflow-y: auto;
+}
+
+.svn-entry-actions {
+    text-align: right;
+    margin-top: 8px;
+}
+
+.svn-action-btn {
+    margin-left: 6px;
+    padding: 4px 10px;
+    font-size: 11px;
+    border-radius: 3px;
+    cursor: pointer;
+    border: 1px solid var(--background-modifier-border);
+    background: var(--interactive-normal);
+    color: var(--text-normal);
+    transition: all 0.2s ease;
+}
+
+.svn-action-btn:hover {
+    background: var(--interactive-hover);
+    border-color: var(--interactive-accent);
+}
+
+.svn-separator {
+    border: none;
+    height: 1px;
+    background: var(--background-modifier-border);
+    margin: 8px 0;
+}
+
+/* Diff content styling */
+.svn-diff-content {
+    background: var(--background-primary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    padding: 10px;
+    max-height: 400px;
+    overflow: auto;
+    font-family: var(--font-monospace);
+    font-size: 12px;
+    white-space: pre-wrap;
+}
+
+.svn-diff-content code {
+    background: none;
+    padding: 0;
+}
+
+/* Settings styling */
+.setting-item-description {
+    font-size: 13px;
+    color: var(--text-muted);
+}
+
+/* Modal improvements */
+.modal .svn-revision-container {
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+}
+
+/* Hover effects */
+.svn-revision-item:hover {
+    background: var(--background-modifier-hover);
+}
+
+.svn-revision-buttons button:hover {
+    background: var(--interactive-hover);
+}
+
+/* Loading states */
+.svn-loading {
+    text-align: center;
+    color: var(--text-muted);
+    font-style: italic;
+    padding: 20px;
+}
+
+/* File not in SVN styling */
+.svn-not-in-repo {
+    padding: 15px;
+    text-align: center;
+    background: var(--background-secondary);
+    border-radius: 6px;
+    margin: 10px 0;
+}
+
+.svn-info-text {
+    color: var(--text-muted);
+    margin-bottom: 15px;
+}
+
+.svn-add-btn, .svn-commit-btn {
+    margin: 5px;
+    padding: 8px 16px;
+}
+
+.svn-commit-input {
+    width: 100%;
+    padding: 8px;
+    margin: 10px 0;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    background: var(--background-primary);
+    color: var(--text-normal);
+}
+
+.svn-modal-buttons {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+    margin-top: 15px;
+}
+
+.svn-modal-buttons button {
+    padding: 8px 16px;
+}
+
+/* Added but not committed styling */
+.svn-added-not-committed {
+    padding: 16px;
+    background-color: var(--background-secondary);
+    border: 1px solid var(--color-accent);
+    border-radius: 6px;
+    text-align: center;
+}
+
+.svn-secondary-text {
+    font-size: 0.9em;
+    color: var(--text-muted);
+    margin-top: 12px;
+}
+
+/* SVN Manager Header */
+.svn-manager-header {
+    padding: 12px;
+    border-bottom: 1px solid var(--background-modifier-border);
+    background: var(--background-secondary);
+}
+
+.svn-manager-header h3 {
+    margin: 0;
+    color: var(--text-accent);
+    font-size: 16px;
+}
+
+.svn-danger-btn {
+    border-color: var(--text-error);
+    color: var(--text-error);
+}
+
+.svn-danger-btn:hover {
+    background: var(--text-error);
+    color: var(--text-on-accent);
+    border-color: var(--text-error);
+}
+
+/* Status display styles */
+.svn-status-container {
+    margin: 10px 0;
+}
+
+.svn-status-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px;
+    margin: 4px 0;
+    background: var(--background-secondary);
+    border-radius: 4px;
+    border: 1px solid var(--background-modifier-border);
+}
+
+.svn-status-code {
+    font-family: var(--font-monospace);
+    font-weight: bold;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 11px;
+    min-width: 20px;
+    text-align: center;
+}
+
+.svn-status-m {
+    background: var(--color-orange);
+    color: white;
+}
+
+.svn-status-a {
+    background: var(--color-green);
+    color: white;
+}
+
+.svn-status-d {
+    background: var(--color-red);
+    color: white;
+}
+
+.svn-status-c {
+    background: var(--color-purple);
+    color: white;
+}
+
+.svn-status-unknown {
+    background: var(--color-blue);
+    color: white;
+}
+
+.svn-status-path {
+    font-family: var(--font-monospace);
+    font-size: 12px;
+    color: var(--text-muted);
+    flex: 1;
+}
+
+/* Warning text for revert confirmation */
+.svn-warning-text {
+    color: var(--text-error);
+    background: var(--background-modifier-error);
+    padding: 10px;
+    border-radius: 4px;
+    margin: 10px 0;
+    border: 1px solid var(--text-error);
+}
+
+/* Toolbar tooltips enhancement */
+.svn-icon-btn[title]:hover::after {
+    content: attr(title);
+    position: absolute;
+    bottom: -30px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--background-tooltip);
+    color: var(--text-on-accent);
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    white-space: nowrap;
+    z-index: 1000;
+    pointer-events: none;
+}
+
+/* Mobile responsiveness for toolbar */
+@media (max-width: 400px) {
+    .svn-toolbar {
+        gap: 6px;
+        padding: 8px;
+    }
+    
+    .svn-icon-btn {
+        min-width: 32px;
+        height: 32px;
+        font-size: 14px;
+        padding: 6px 8px;
+    }
+}
+
+.svn-input-container {
+    margin: 15px 0;
+}
+
+.svn-input-container input {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    background: var(--background-primary);
+    color: var(--text-normal);
+    font-size: 14px;
+}
+
+.svn-input-container input:focus {
+    outline: none;
+    border-color: var(--interactive-accent);
+    box-shadow: 0 0 0 2px var(--interactive-accent-hover);
+}
+
+.modal-button-container {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+    margin-top: 20px;
+    padding-top: 15px;
+    border-top: 1px solid var(--background-modifier-border);
+}
+
+.modal-button-container .setting-item {
+    border: none;
+    padding: 0;
+    margin: 0;
+}
+
+.modal-button-container .setting-item-control {
+    gap: 10px;
+}
+
+/* Modal diff content improvements */
+.modal .svn-diff-content {
+    max-height: 60vh;
+    min-height: 200px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    background: var(--background-primary);
+    font-size: 12px;
+    line-height: 1.4;
+}
