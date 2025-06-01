@@ -1,444 +1,384 @@
-/* SVN Plugin Styles */
+/* SVN Plugin - Minimal Styles using Obsidian Variables */
 
-/* Status bar styling - minimal colored text only */
-.status-bar-item.svn-status-clean {
+/* UI Caching and smooth transitions */
+.svn-view-container {
+    transition: opacity 0.15s ease-in-out;
+}
+
+.svn-view-container.loading {
+    opacity: 0.7;
+}
+
+.svn-cached-content {
+    opacity: 0.9;
+}
+
+/* Persistent DOM structure styles to prevent flashing */
+.svn-view-container {
+    min-height: 100px; /* Prevents layout shifts */
+    transition: opacity 0.1s ease-in-out;
+}
+
+.svn-history-content {
+    /* Prevent content jumping */
+    min-height: 50px;
+}
+
+.svn-status-display {
+    /* Prevent status area from collapsing */
+    min-height: 20px;
+    margin: 8px 0;
+}
+
+/* Anti-flashing for content updates */
+.svn-history-content.updating {
+    opacity: 0.7;
+}
+
+.svn-status-display.updating {
+    opacity: 0.7;
+}
+
+/* Status header in history view */
+.svn-status-header {
+    padding: var(--size-4-2);
+    border-bottom: 1px solid var(--background-modifier-border);
+    background: var(--background-secondary);
+    display: flex;
+    align-items: center;
+    gap: var(--size-4-2);
+}
+
+.svn-status-indicator {
+    font-size: var(--font-ui-small);
+    font-weight: var(--font-weight-medium);
+    padding: var(--size-2-1) var(--size-4-2);
+    border-radius: var(--radius-s);
+    display: flex;
+    align-items: center;
+    gap: var(--size-2-2);
+}
+
+.svn-status-clean {
     color: var(--text-success);
 }
 
-.status-bar-item.svn-status-modified {
+.svn-status-modified {
     color: var(--text-warning);
 }
 
-.status-bar-item.svn-status-error {
+.svn-status-error {
     color: var(--text-error);
 }
 
-/* Revision modal styling */
-.svn-revision-container {
-    max-height: 400px;
-    overflow-y: auto;
-    margin: 10px 0;
+.svn-status-text {
+    font-family: var(--font-monospace);
+    font-size: var(--font-ui-smaller);
+    font-weight: var(--font-weight-medium);
 }
 
-.svn-revision-item {
-    border: 1px solid var(--background-modifier-border);
-    border-radius: 4px;
-    padding: 10px;
-    margin-bottom: 10px;
-    background: var(--background-secondary);
-}
+/* Status bar indicators */
+.status-bar-item.svn-status-clean { color: var(--text-success); }
+.status-bar-item.svn-status-modified { color: var(--text-warning); }
+.status-bar-item.svn-status-error { color: var(--text-error); }
 
-.svn-revision-item.svn-current {
-    border-color: var(--interactive-accent);
-    background: var(--background-modifier-hover);
-}
-
-.svn-revision-header {
-    margin-bottom: 8px;
-    font-size: 14px;
-}
-
-.svn-revision-header strong {
-    color: var(--text-accent);
-    margin-right: 8px;
-}
-
-.svn-revision-message {
-    font-size: 12px;
-    color: var(--text-muted);
-    margin: 5px 0;
-    font-style: italic;
-    max-height: 60px;
-    overflow: hidden;
-    white-space: pre-wrap;
-}
-
-.svn-revision-buttons {
-    margin-top: 8px;
-    text-align: right;
-}
-
-.svn-revision-buttons button {
-    margin-left: 8px;
-    padding: 4px 12px;
-    font-size: 12px;
-}
-
-/* File History View styling */
-.svn-history-header {
-    padding: 10px;
+/* Status display in history view */
+.svn-status-display {
+    padding: var(--size-2-2) var(--size-4-3);
     border-bottom: 1px solid var(--background-modifier-border);
-    background: var(--background-secondary);
+    font-size: var(--font-ui-small);
 }
 
-.svn-history-header h3 {
-    margin: 0;
-    color: var(--text-accent);
-}
+.svn-status-text.svn-status-clean { color: var(--text-success); }
+.svn-status-text.svn-status-modified { color: var(--text-warning); }
+.svn-status-text.svn-status-added { color: var(--text-success); }
+.svn-status-text.svn-status-deleted { color: var(--text-error); }
+.svn-status-text.svn-status-untracked { color: var(--text-muted); }
+.svn-status-text.svn-status-warning { color: var(--text-warning); }
+.svn-status-text.svn-status-error { color: var(--text-error); }
 
-.svn-no-file, .svn-no-history {
-    text-align: center;
-    color: var(--text-muted);
-    font-style: italic;
-    padding: 20px;
+/* Compact history view - leveraging Obsidian's nav-file structure */
+.svn-history-content {
+    padding: var(--size-4-1) var(--size-4-3) var(--size-4-6) var(--size-4-3);
 }
 
 .svn-history-entry {
-    border: 1px solid var(--background-modifier-border);
-    border-radius: 6px;
-    padding: 12px;
-    margin-bottom: 12px;
-    background: var(--background-primary-alt);
-    transition: background-color 0.2s ease;
+    border-bottom: 1px solid var(--background-modifier-border-hover);
+    padding: var(--size-4-2);
+    position: relative;
 }
 
 .svn-history-entry:hover {
     background: var(--background-modifier-hover);
+    padding: var(--size-4-2);
+    border-radius: var(--radius-s);
 }
 
-.svn-entry-header {
+.svn-entry-main-row {
     display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 8px;
-    font-size: 13px;
+    align-items: flex-start;
+    gap: var(--size-4-2);
+    padding-right: calc(var(--size-4-4) + var(--size-4-2)); /* Space for actions - reduced since one button removed */
 }
 
-.svn-revision-number {
-    font-weight: bold;
-    color: var(--text-accent);
-    background: var(--interactive-accent);
+.svn-entry-info {
+    display: flex;
+    align-items: center;
+    gap: var(--size-4-2);
+    flex: 1;
+    min-width: 0;
+}
+
+.svn-revision {
+    font-size: var(--font-ui-smaller);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-on-accent);
-    padding: 2px 6px;
-    border-radius: 3px;
-    font-size: 11px;
+    background: var(--interactive-accent);
+    padding: 1px var(--size-2-2);
+    border-radius: var(--radius-s);
 }
 
 .svn-author {
+    font-size: var(--font-ui-small);
+    font-weight: var(--font-weight-medium);
     color: var(--text-normal);
-    margin-left: 8px;
 }
 
 .svn-date {
+    font-size: var(--font-ui-smaller);
     color: var(--text-muted);
-    font-size: 11px;
-    margin-left: auto;
-}
-
-.svn-message {
-    font-size: 12px;
-    color: var(--text-muted);
-    margin: 8px 0;
-    padding: 6px;
-    background: var(--background-secondary);
-    border-radius: 3px;
-    white-space: pre-wrap;
-    line-height: 1.4;
-    max-height: 80px;
-    overflow-y: auto;
+    white-space: nowrap;
 }
 
 .svn-entry-actions {
-    text-align: right;
-    margin-top: 8px;
+    position: absolute;
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex;
+    gap: 1px;
+    align-items: center;
 }
 
-.svn-action-btn {
-    margin-left: 6px;
-    padding: 4px 10px;
-    font-size: 11px;
-    border-radius: 3px;
-    cursor: pointer;
-    border: 1px solid var(--background-modifier-border);
-    background: var(--interactive-normal);
-    color: var(--text-normal);
-    transition: all 0.2s ease;
+.svn-entry-actions .clickable-icon {
+    padding: var(--size-2-1);
+    border-radius: var(--radius-s);
+    opacity: 0.6;
+    position: relative;
+    z-index: 1; /* Ensure action buttons are above the clickable entry */
 }
 
-.svn-action-btn:hover {
-    background: var(--interactive-hover);
-    border-color: var(--interactive-accent);
-}
-
-.svn-separator {
-    border: none;
-    height: 1px;
-    background: var(--background-modifier-border);
-    margin: 8px 0;
-}
-
-/* Diff content styling */
-.svn-diff-content {
-    background: var(--background-primary);
-    border: 1px solid var(--background-modifier-border);
-    border-radius: 4px;
-    padding: 10px;
-    max-height: 400px;
-    overflow: auto;
-    font-family: var(--font-monospace);
-    font-size: 12px;
-    white-space: pre-wrap;
-}
-
-.svn-diff-content code {
-    background: none;
-    padding: 0;
-}
-
-/* Settings styling */
-.setting-item-description {
-    font-size: 13px;
-    color: var(--text-muted);
-}
-
-/* Modal improvements */
-.modal .svn-revision-container {
-    border: 1px solid var(--background-modifier-border);
-    border-radius: 4px;
-}
-
-/* Hover effects */
-.svn-revision-item:hover {
+.svn-entry-actions .clickable-icon:hover {
+    opacity: 1;
     background: var(--background-modifier-hover);
 }
 
-.svn-revision-buttons button:hover {
-    background: var(--interactive-hover);
+.svn-message {
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+    margin-top: var(--size-2-1);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
-/* Loading states */
-.svn-loading {
+/* States and modals */
+.svn-no-file, .svn-no-history, .svn-loading {
     text-align: center;
     color: var(--text-muted);
     font-style: italic;
-    padding: 20px;
+    padding: var(--size-4-6);
 }
 
-/* File not in SVN styling */
-.svn-not-in-repo {
-    padding: 15px;
+.svn-not-in-repo, .svn-added-not-committed {
+    padding: var(--size-4-4);
     text-align: center;
     background: var(--background-secondary);
-    border-radius: 6px;
-    margin: 10px 0;
+    border-radius: var(--radius-m);
+    margin: var(--size-4-2) 0;
 }
 
-.svn-info-text {
+.svn-added-not-committed {
+    border: 1px solid var(--color-accent);
+}
+
+.svn-info-text, .svn-secondary-text {
     color: var(--text-muted);
-    margin-bottom: 15px;
+    margin-bottom: var(--size-4-3);
 }
 
-.svn-add-btn, .svn-commit-btn {
-    margin: 5px;
-    padding: 8px 16px;
+.svn-secondary-text {
+    font-size: var(--font-ui-small);
+    margin-top: var(--size-4-2);
 }
 
 .svn-commit-input {
     width: 100%;
-    padding: 8px;
-    margin: 10px 0;
+}
+
+/* Diff content using code block styling */
+.svn-diff-content {
+    background: var(--code-background);
     border: 1px solid var(--background-modifier-border);
-    border-radius: 4px;
-    background: var(--background-primary);
-    color: var(--text-normal);
+    border-radius: var(--radius-m);
+    padding: var(--size-4-2);
+    max-height: 400px;
+    overflow: auto;
+    font-family: var(--font-monospace);
+    font-size: var(--font-ui-small);
+    white-space: pre-wrap;
 }
 
-.svn-modal-buttons {
-    display: flex;
-    gap: 10px;
-    justify-content: flex-end;
-    margin-top: 15px;
-}
-
-.svn-modal-buttons button {
-    padding: 8px 16px;
-}
-
-/* Added but not committed styling */
-.svn-added-not-committed {
-    padding: 16px;
-    background-color: var(--background-secondary);
-    border: 1px solid var(--color-accent);
-    border-radius: 6px;
-    text-align: center;
-}
-
-.svn-secondary-text {
-    font-size: 0.9em;
-    color: var(--text-muted);
-    margin-top: 12px;
-}
-
-/* SVN Manager Header */
-.svn-manager-header {
-    padding: 12px;
-    border-bottom: 1px solid var(--background-modifier-border);
-    background: var(--background-secondary);
-}
-
-.svn-manager-header h3 {
-    margin: 0;
-    color: var(--text-accent);
-    font-size: 16px;
-}
-
-.svn-danger-btn {
-    border-color: var(--text-error);
-    color: var(--text-error);
-}
-
-.svn-danger-btn:hover {
-    background: var(--text-error);
-    color: var(--text-on-accent);
-    border-color: var(--text-error);
-}
-
-/* Status display styles */
-.svn-status-container {
-    margin: 10px 0;
-}
-
+/* Status items using tag styling */
 .svn-status-item {
     display: flex;
     align-items: center;
-    gap: 10px;
-    padding: 8px;
-    margin: 4px 0;
+    gap: var(--size-4-2);
+    padding: var(--size-2-2);
+    margin: var(--size-2-1) 0;
     background: var(--background-secondary);
-    border-radius: 4px;
+    border-radius: var(--radius-s);
     border: 1px solid var(--background-modifier-border);
 }
 
 .svn-status-code {
     font-family: var(--font-monospace);
-    font-weight: bold;
-    padding: 2px 6px;
-    border-radius: 3px;
-    font-size: 11px;
+    font-weight: var(--font-weight-bold);
+    padding: 1px var(--size-2-2);
+    border-radius: var(--radius-s);
+    font-size: var(--font-ui-smaller);
     min-width: 20px;
     text-align: center;
+    color: var(--text-on-accent);
 }
 
-.svn-status-m {
-    background: var(--color-orange);
-    color: white;
-}
-
-.svn-status-a {
-    background: var(--color-green);
-    color: white;
-}
-
-.svn-status-d {
-    background: var(--color-red);
-    color: white;
-}
-
-.svn-status-c {
-    background: var(--color-purple);
-    color: white;
-}
-
-.svn-status-unknown {
-    background: var(--color-blue);
-    color: white;
-}
+.svn-status-m { background: var(--color-orange); }
+.svn-status-a { background: var(--color-green); }
+.svn-status-d { background: var(--color-red); }
+.svn-status-c { background: var(--color-purple); }
+.svn-status-unknown { background: var(--color-blue); }
 
 .svn-status-path {
     font-family: var(--font-monospace);
-    font-size: 12px;
+    font-size: var(--font-ui-small);
     color: var(--text-muted);
     flex: 1;
 }
 
-/* Warning text for revert confirmation */
-.svn-warning-text {
-    color: var(--text-error);
-    background: var(--background-modifier-error);
-    padding: 10px;
-    border-radius: 4px;
-    margin: 10px 0;
-    border: 1px solid var(--text-error);
-}
-
-/* Toolbar tooltips enhancement */
-.svn-icon-btn[title]:hover::after {
-    content: attr(title);
-    position: absolute;
-    bottom: -30px;
-    left: 50%;
-    transform: translateX(-50%);
-    background: var(--background-tooltip);
-    color: var(--text-on-accent);
-    padding: 4px 8px;
-    border-radius: 4px;
-    font-size: 11px;
-    white-space: nowrap;
-    z-index: 1000;
-    pointer-events: none;
-}
-
-/* Mobile responsiveness for toolbar */
-@media (max-width: 400px) {
-    .svn-toolbar {
-        gap: 6px;
-        padding: 8px;
-    }
-    
-    .svn-icon-btn {
-        min-width: 32px;
-        height: 32px;
-        font-size: 14px;
-        padding: 6px 8px;
-    }
-}
-
-.svn-input-container {
-    margin: 15px 0;
-}
-
-.svn-input-container input {
-    width: 100%;
-    padding: 8px 12px;
+/* Blame Modal Styles */
+.svn-blame-container {
+    max-height: 70vh;
+    overflow-y: auto;
+    font-family: var(--font-monospace);
+    font-size: var(--font-text-size);
     border: 1px solid var(--background-modifier-border);
-    border-radius: 4px;
-    background: var(--background-primary);
-    color: var(--text-normal);
-    font-size: 14px;
+    border-radius: var(--radius-s);
 }
 
-.svn-input-container input:focus {
-    outline: none;
-    border-color: var(--interactive-accent);
-    box-shadow: 0 0 0 2px var(--interactive-accent-hover);
+.svn-blame-header {
+    display: grid;
+    grid-template-columns: 60px 100px 50px 1fr;
+    gap: var(--size-4-2);
+    padding: var(--size-4-2);
+    background: var(--background-modifier-header);
+    font-weight: var(--font-weight-medium);
+    border-bottom: 1px solid var(--background-modifier-border);
+    position: sticky;
+    top: 0;
 }
 
-.modal-button-container {
-    display: flex;
-    gap: 10px;
-    justify-content: flex-end;
-    margin-top: 20px;
-    padding-top: 15px;
+.svn-blame-row {
+    display: grid;
+    grid-template-columns: 60px 100px 50px 1fr;
+    gap: var(--size-4-2);
+    padding: var(--size-4-1) var(--size-4-2);
+    border-bottom: 1px solid var(--background-modifier-border-hover);
+}
+
+.svn-blame-row:hover {
+    background: var(--background-modifier-hover);
+}
+
+.svn-blame-col-rev {
+    color: var(--text-accent);
+    font-weight: var(--font-weight-medium);
+    cursor: pointer;
+}
+
+.svn-blame-col-author {
+    color: var(--text-muted);
+}
+
+.svn-blame-col-line {
+    color: var(--text-faint);
+    text-align: right;
+}
+
+.svn-blame-col-content {
+    white-space: pre;    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Info Panel Styles */
+.svn-info-panel {
+    margin: var(--size-4-2) 0;
+    padding: var(--size-4-3);
+    background: var(--background-modifier-hover);
+    border-radius: var(--radius-s);
+    border-left: 3px solid var(--interactive-accent);
     border-top: 1px solid var(--background-modifier-border);
 }
 
-.modal-button-container .setting-item {
-    border: none;
-    padding: 0;
-    margin: 0;
+.svn-loading-small {
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+    font-style: italic;
 }
 
-.modal-button-container .setting-item-control {
-    gap: 10px;
+.svn-info-item {
+    font-size: var(--font-ui-smaller);
+    margin-bottom: var(--size-4-1);
+    color: var(--text-muted);
 }
 
-/* Modal diff content improvements */
-.modal .svn-diff-content {
-    max-height: 60vh;
-    min-height: 200px;
-    border: 1px solid var(--background-modifier-border);
-    border-radius: 6px;
-    background: var(--background-primary);
-    font-size: 12px;
-    line-height: 1.4;
+.svn-info-item:last-child {
+    margin-bottom: 0;
+}
+
+.svn-info-url {
+    font-family: var(--font-monospace);
+    word-break: break-all;
+}
+
+.svn-info-header {
+    font-weight: var(--font-weight-medium);
+    color: var(--text-normal);
+}
+
+.svn-info-prop {
+    font-family: var(--font-monospace);
+    font-size: var(--font-ui-smaller);
+    margin-left: var(--size-4-2);
+}
+
+/* Info Panel Styles */
+.svn-info-panel {
+    margin: var(--size-4-2) 0;
+    padding: var(--size-4-3);
+    background: var(--background-modifier-hover);
+    border-radius: var(--radius-s);
+    border-left: 3px solid var(--interactive-accent);
+    border-top: 1px solid var(--background-modifier-border);
+}
+
+.svn-loading-small {
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+    font-style: italic;
+}
+
+/* Minimal responsiveness */
+@media (max-width: 400px) {
+    .svn-entry-info { gap: var(--size-2-2); }
+    .svn-author { display: none; }
 }

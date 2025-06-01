@@ -2,7 +2,7 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import { join, dirname } from 'path';
 import { existsSync } from 'fs';
-import { SvnLogEntry, SvnStatus, SvnCommandResult } from '../types';
+import { SvnLogEntry, SvnStatus, SvnCommandResult, SvnBlameEntry, SvnInfo } from '../types';
 import { SvnError, SvnNotInstalledError, NotWorkingCopyError, SvnCommandError } from '../utils/errors';
 
 const execPromise = promisify(exec);
@@ -352,39 +352,196 @@ export class SVNClient {
             if (!workingCopyRoot) {
                 return false;
             }
+
+            const { stdout } = await execPromise(`"${this.svnPath}" status "${absolutePath}"`, {
+                cwd: workingCopyRoot
+            });
+
+            return !stdout.includes('?');
+        } catch (error) {
+            return false;
+        }
+    }
+
+    async getBlame(filePath: string, revision?: string): Promise<SvnBlameEntry[]> {
+        try {
+            const absolutePath = this.resolveAbsolutePath(filePath);
+            const workingCopyRoot = this.findSvnWorkingCopy(absolutePath);
             
-            // Use svn status to check if file is tracked
-            const command = `${this.svnPath} status "${absolutePath}"`;
-            const { stdout, stderr } = await execPromise(command, { cwd: workingCopyRoot });
-            
-            // If the file is not tracked, svn status will show it with '?' prefix
-            // If it's tracked, it will show its status or nothing if clean
-            const lines = stdout.split('\n').filter(line => line.trim());
-            
-            // Check if any line shows this file as untracked (starts with '?')
-            for (const line of lines) {
-                if (line.trim().startsWith('?') && line.includes(absolutePath)) {
-                    console.log('File is untracked (? status)');
-                    return false; // File is not tracked
+            if (!workingCopyRoot) {
+                throw new NotWorkingCopyError(filePath);
+            }
+
+            const revisionFlag = revision ? `-r ${revision}` : '';
+            const { stdout } = await execPromise(
+                `"${this.svnPath}" blame --xml ${revisionFlag} "${absolutePath}"`, 
+                { cwd: workingCopyRoot }
+            );
+
+            return this.parseBlameXml(stdout);
+        } catch (error: any) {
+            if (error.stderr?.includes('not found')) {
+                throw new SvnError(`File not found in repository: ${filePath}`);
+            }
+            throw new SvnCommandError(`Failed to get blame for ${filePath}`, error.message, error.code);
+        }
+    }
+
+    private parseBlameXml(xmlOutput: string): SvnBlameEntry[] {
+        const entries: SvnBlameEntry[] = [];
+        const lines = xmlOutput.split('\n');
+        
+        let currentEntry: Partial<SvnBlameEntry> = {};
+        let lineNumber = 1;
+        
+        for (const line of lines) {
+            if (line.includes('<entry')) {
+                const lineNumMatch = line.match(/line-number="(\d+)"/);
+                if (lineNumMatch) {
+                    lineNumber = parseInt(lineNumMatch[1]);
                 }
             }
             
-            // If no '?' status found, try svn info to be sure
-            try {
-                await execPromise(`${this.svnPath} info "${absolutePath}"`, { cwd: workingCopyRoot });
-                console.log('File is tracked (svn info succeeded)');
-                return true; // File is tracked
-            } catch (infoError) {
-                // svn info failed, probably not tracked
-                console.log('File is not tracked (svn info failed):', infoError.message);
-                return false;
+            if (line.includes('<commit')) {
+                const revMatch = line.match(/revision="(\d+)"/);
+                if (revMatch) {
+                    currentEntry.revision = revMatch[1];
+                }
             }
             
-        } catch (error) {
-            // If svn status fails entirely, assume not tracked
-            console.log('isFileInSvn failed:', error.message);
-            return false;
+            if (line.includes('<author>')) {
+                currentEntry.author = line.replace(/<\/?author>/g, '').trim();
+            }
+            
+            if (line.includes('<date>')) {
+                currentEntry.date = line.replace(/<\/?date>/g, '').trim();
+            }
+            
+            if (line.includes('</entry>')) {
+                if (currentEntry.revision && currentEntry.author) {
+                    entries.push({
+                        lineNumber,
+                        revision: currentEntry.revision,
+                        author: currentEntry.author,
+                        date: currentEntry.date || ''
+                    });
+                }
+                currentEntry = {};
+            }
         }
+        
+        return entries;
+    }
+
+    async getInfo(filePath: string): Promise<SvnInfo | null> {
+        try {
+            const absolutePath = this.resolveAbsolutePath(filePath);
+            const workingCopyRoot = this.findSvnWorkingCopy(absolutePath);
+            
+            if (!workingCopyRoot) {
+                throw new NotWorkingCopyError(filePath);
+            }
+
+            const { stdout } = await execPromise(
+                `"${this.svnPath}" info --xml "${absolutePath}"`, 
+                { cwd: workingCopyRoot }
+            );
+
+            return this.parseInfoXml(stdout);
+        } catch (error: any) {
+            if (error.stderr?.includes('not found')) {
+                return null;
+            }
+            throw new SvnCommandError(`Failed to get info for ${filePath}`, error.message, error.code);
+        }
+    }
+
+    private parseInfoXml(xmlOutput: string): SvnInfo | null {
+        const lines = xmlOutput.split('\n');
+        const info: Partial<SvnInfo> = {};
+        
+        for (const line of lines) {
+            if (line.includes('<url>')) {
+                info.url = line.replace(/<\/?url>/g, '').trim();
+            }
+            if (line.includes('<repository>')) {
+                const rootMatch = xmlOutput.match(/<root>(.*?)<\/root>/);
+                if (rootMatch) {
+                    info.repositoryRoot = rootMatch[1];
+                }
+                const uuidMatch = xmlOutput.match(/<uuid>(.*?)<\/uuid>/);
+                if (uuidMatch) {
+                    info.repositoryUuid = uuidMatch[1];
+                }
+            }
+            if (line.includes('<commit') && line.includes('revision=')) {
+                const revMatch = line.match(/revision="(\d+)"/);
+                if (revMatch) {
+                    info.lastChangedRev = revMatch[1];
+                }
+                const authorMatch = xmlOutput.match(/<author>(.*?)<\/author>/);
+                if (authorMatch) {
+                    info.lastChangedAuthor = authorMatch[1];
+                }
+                const dateMatch = xmlOutput.match(/<date>(.*?)<\/date>/);
+                if (dateMatch) {
+                    info.lastChangedDate = dateMatch[1];
+                }
+            }
+        }
+        
+        return info.url ? info as SvnInfo : null;
+    }
+
+    async getProperties(filePath: string): Promise<Record<string, string>> {
+        try {
+            const absolutePath = this.resolveAbsolutePath(filePath);
+            const workingCopyRoot = this.findSvnWorkingCopy(absolutePath);
+            
+            if (!workingCopyRoot) {
+                throw new NotWorkingCopyError(filePath);
+            }
+
+            const { stdout } = await execPromise(
+                `"${this.svnPath}" proplist --verbose --xml "${absolutePath}"`, 
+                { cwd: workingCopyRoot }
+            );
+
+            return this.parsePropertiesXml(stdout);
+        } catch (error: any) {
+            if (error.stderr?.includes('not found')) {
+                return {};
+            }
+            throw new SvnCommandError(`Failed to get properties for ${filePath}`, error.message, error.code);
+        }
+    }
+
+    private parsePropertiesXml(xmlOutput: string): Record<string, string> {
+        const properties: Record<string, string> = {};
+        const lines = xmlOutput.split('\n');
+        
+        let currentProp = '';
+        let inValue = false;
+        
+        for (const line of lines) {
+            if (line.includes('<property') && line.includes('name=')) {
+                const nameMatch = line.match(/name="([^"]+)"/);
+                if (nameMatch) {
+                    currentProp = nameMatch[1];
+                }
+                inValue = true;
+            } else if (line.includes('</property>')) {
+                inValue = false;
+                currentProp = '';
+            } else if (inValue && currentProp) {
+                const value = line.trim();
+                if (value && !value.startsWith('<')) {
+                    properties[currentProp] = value;
+                }
+            }
+        }
+        
+        return properties;
     }
 
     private parseXmlLog(xmlOutput: string): SvnLogEntry[] {

@@ -13,7 +13,7 @@ import { PLUGIN_CONSTANTS, DEFAULT_SETTINGS, SVN_ICON_SVG } from './core/constan
 export default class ObsidianSvnPlugin extends Plugin {
     settings: SvnPluginSettings;
     svnClient: SVNClient;
-    private statusBarItem: HTMLElement | null = null;
+    private statusUpdateTimer: number | null = null;
 
     async onload() {
         console.log(`Loading ${PLUGIN_CONSTANTS.PLUGIN_NAME} plugin`);
@@ -84,19 +84,16 @@ export default class ObsidianSvnPlugin extends Plugin {
                 this.activateView();
             }
         });
-    }
-
-    /**
+    }    /**
      * Setup optional features based on settings
      */
     private setupFeatures() {
-        if (this.settings.showStatusInStatusBar) {
-            this.setupStatusBar();
-        }
-
         if (this.settings.autoCommit) {
             this.setupAutoCommit();
         }
+        
+        // Setup file change monitoring for status updates
+        this.setupFileChangeMonitoring();
     }
 
     /**
@@ -105,11 +102,6 @@ export default class ObsidianSvnPlugin extends Plugin {
     private initializeWorkspace() {
         // Refresh views after configuration
         this.refreshFileHistoryViews();
-        
-        // Refresh again after delay for plugin reload scenarios
-        setTimeout(() => {
-            this.refreshFileHistoryViews();
-        }, PLUGIN_CONSTANTS.UI.REFRESH_DELAY);
 
         // Update SVN client when workspace is ready
         this.app.workspace.onLayoutReady(() => {
@@ -148,9 +140,7 @@ export default class ObsidianSvnPlugin extends Plugin {
      */
     async loadSettings() {
         this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
-    }
-
-    /**
+    }    /**
      * Save plugin settings
      */
     async saveSettings() {
@@ -158,9 +148,6 @@ export default class ObsidianSvnPlugin extends Plugin {
         
         // Update SVN client path when settings change
         this.updateSvnClient();
-        
-        // Update status bar based on settings
-        this.updateStatusBarVisibility();
     }
 
     /**
@@ -173,169 +160,75 @@ export default class ObsidianSvnPlugin extends Plugin {
         const adapter = this.app.vault.adapter;
         if (adapter instanceof FileSystemAdapter) {
             this.svnClient.setVaultPath(adapter.getBasePath());
-        }
-        
-        // Refresh file history views with the new client
+        }        // Refresh file history views with the new client
         this.refreshFileHistoryViews();
-    }
-
-    /**
-     * Update status bar visibility based on settings
+    }    /**
+     * Setup file change monitoring for status updates
      */
-    private updateStatusBarVisibility() {
-        if (this.settings.showStatusInStatusBar && !this.statusBarItem) {
-            this.setupStatusBar();
-        } else if (!this.settings.showStatusInStatusBar && this.statusBarItem) {
-            this.statusBarItem.remove();
-            this.statusBarItem = null;
-        }
-    }
-
-    /**
-     * Setup status bar functionality
-     */
-    private setupStatusBar() {
-        this.statusBarItem = this.addStatusBarItem();
-        this.statusBarItem.addClass('mod-clickable');
-        this.statusBarItem.addEventListener('click', () => {
-            this.activateView();
-        });
-        this.updateStatusBar();
-        
-        // Register event handlers for status updates
-        this.registerStatusBarEvents();
-    }
-
-    /**
-     * Register event handlers for status bar updates
-     */
-    private registerStatusBarEvents() {
-        // Update status bar when switching files
+    private setupFileChangeMonitoring() {
+        // Update status when switching files (full refresh needed for new file)
         this.registerEvent(
             this.app.workspace.on('active-leaf-change', () => {
-                this.updateStatusBar();
+                this.refreshFileHistoryViews(); // Full refresh when switching files
             })
         );
         
-        // Update status bar when files are modified
+        // Update status when files are modified (status-only refresh)
         this.registerEvent(
             this.app.vault.on('modify', (file: TFile) => {
                 this.handleFileChange(file);
             })
         );
         
-        // Update status bar when files are created
+        // Update status when files are created (status-only refresh)
         this.registerEvent(
             this.app.vault.on('create', (file: TFile) => {
                 this.handleFileChange(file);
             })
         );
         
-        // Update status bar when files are deleted
+        // Update status when files are deleted (status-only refresh)
         this.registerEvent(
             this.app.vault.on('delete', () => {
-                this.scheduleStatusUpdate();
+                this.scheduleStatusRefresh();
             })
         );
         
-        // Update status bar when files are renamed
+        // Update history views when files are renamed
         this.registerEvent(
             this.app.vault.on('rename', (file: TFile) => {
                 this.handleFileChange(file);
             })
         );
-    }
-
-    /**
-     * Handle file changes for status bar updates
+    }    /**
+     * Handle file changes for status updates
      */
     private handleFileChange(file: TFile) {
         const activeFile = this.app.workspace.getActiveFile();
         if (activeFile && file.path === activeFile.path) {
-            this.scheduleStatusUpdate();
+            this.scheduleStatusRefresh();
         }
     }
 
     /**
-     * Schedule a status bar update with delay
+     * Schedule a status refresh with delay
      */
-    private scheduleStatusUpdate() {
-        setTimeout(() => {
-            this.updateStatusBar();
-        }, PLUGIN_CONSTANTS.UI.STATUS_UPDATE_DELAY);
-    }
-
-    /**
-     * Update the status bar content
-     */
-    private async updateStatusBar() {
-        if (!this.statusBarItem) return;
-
-        const activeFile = this.app.workspace.getActiveFile();
-        if (!activeFile) {
-            this.clearStatusBar();
-            return;
+    private scheduleStatusRefresh() {
+        if (this.statusUpdateTimer) {
+            clearTimeout(this.statusUpdateTimer);
         }
-
-        try {
-            const isWorkingCopy = await this.svnClient.isWorkingCopy(activeFile.path);
-            if (!isWorkingCopy) {
-                this.clearStatusBar();
-                return;
-            }
-
-            const status = await this.svnClient.getStatus(activeFile.path);
-            this.displayStatus(status);
-        } catch (error) {
-            this.displayErrorStatus();
-        }
-    }
-
-    /**
-     * Clear status bar content
-     */
-    private clearStatusBar() {
-        if (this.statusBarItem) {
-            this.statusBarItem.setText('');
-            this.statusBarItem.removeClass('svn-status-clean', 'svn-status-modified', 'svn-status-error');
-        }
-    }
-
-    /**
-     * Display SVN status in status bar
-     */
-    private displayStatus(status: any[]) {
-        if (!this.statusBarItem) return;
         
-        if (status.length === 0) {
-            this.statusBarItem.setText('SVN: Clean');
-            this.statusBarItem.removeClass('svn-status-modified', 'svn-status-error');
-            this.statusBarItem.addClass('svn-status-clean');
-        } else {
-            const statusText = status.map(s => s.status).join('');
-            this.statusBarItem.setText(`SVN: ${statusText}`);
-            this.statusBarItem.removeClass('svn-status-clean', 'svn-status-error');
-            this.statusBarItem.addClass('svn-status-modified');
-        }
-    }
-
-    /**
-     * Display error status in status bar
-     */
-    private displayErrorStatus() {
-        if (this.statusBarItem) {
-            this.statusBarItem.setText('SVN: Error');
-            this.statusBarItem.removeClass('svn-status-clean', 'svn-status-modified');
-            this.statusBarItem.addClass('svn-status-error');
-        }
+        this.statusUpdateTimer = window.setTimeout(() => {
+            this.refreshStatusInViews();
+            this.statusUpdateTimer = null;
+        }, 300); // 300ms delay for status updates
     }
 
     /**
      * Setup auto-commit functionality
      */
     private setupAutoCommit() {
-        this.registerEvent(
-            this.app.vault.on('modify', async (file: TFile) => {
+        this.registerEvent(            this.app.vault.on('modify', async (file: TFile) => {
                 if (!this.settings.autoCommit) return;
 
                 try {
@@ -343,11 +236,9 @@ export default class ObsidianSvnPlugin extends Plugin {
                     if (isWorkingCopy) {
                         await this.svnClient.commitFile(file.path, this.settings.commitMessage);
                         new Notice(`Auto-committed: ${file.name}`);
-                        
-                        // Update status bar and refresh views
-                        this.updateStatusBar();
+                          // Refresh status after auto-commit
                         setTimeout(() => {
-                            this.refreshFileHistoryViews();
+                            this.refreshStatusInViews();
                         }, PLUGIN_CONSTANTS.UI.REFRESH_DELAY);
                     }
                 } catch (error) {
@@ -363,7 +254,7 @@ export default class ObsidianSvnPlugin extends Plugin {
      */
     refreshFileHistoryViews() {
         let refreshedCount = 0;
-        this.app.workspace.iterateAllLeaves((leaf) => {
+        this.app.workspace.iterateAllLeaves(leaf => {
             if (leaf.view instanceof FileHistoryView) {
                 leaf.view.refreshView();
                 refreshedCount++;
@@ -373,12 +264,26 @@ export default class ObsidianSvnPlugin extends Plugin {
     }
 
     /**
+     * Refresh only the status display in all open file history views
+     */
+    refreshStatusInViews() {
+        let refreshedCount = 0;
+        this.app.workspace.iterateAllLeaves(leaf => {
+            if (leaf.view instanceof FileHistoryView) {
+                leaf.view.refreshStatus();
+                refreshedCount++;
+            }
+        });
+        console.log(`Refreshed status in ${refreshedCount} file history views`);
+    }
+
+    /**
      * Cleanup resources on plugin unload
      */
     private cleanup() {
-        if (this.statusBarItem) {
-            this.statusBarItem.remove();
-            this.statusBarItem = null;
+        if (this.statusUpdateTimer) {
+            clearTimeout(this.statusUpdateTimer);
+            this.statusUpdateTimer = null;
         }
     }
 }

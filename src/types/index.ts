@@ -14,11 +14,26 @@ export interface SvnLogEntry {
     message: string;
 }
 
+export interface SvnBlameEntry {
+    lineNumber: number;
+    revision: string;
+    author: string;
+    date: string;
+}
+
+export interface SvnInfo {
+    url: string;
+    repositoryRoot: string;
+    repositoryUuid: string;
+    lastChangedRev: string;
+    lastChangedAuthor: string;
+    lastChangedDate: string;
+}
+
 export interface SvnPluginSettings {
     svnBinaryPath: string;
     commitMessage: string;
     autoCommit: boolean;
-    showStatusInStatusBar: boolean;
 }
 
 export interface PluginConstants {

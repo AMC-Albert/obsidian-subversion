@@ -46,15 +46,5 @@ export class SvnSettingTab extends PluginSettingTab {
                     this.plugin.settings.commitMessage = value;
                     await this.plugin.saveSettings();
                 }));
-
-        new Setting(containerEl)
-            .setName('Show status in status bar')
-            .setDesc('Display SVN status information in the status bar')
-            .addToggle(toggle => toggle
-                .setValue(this.plugin.settings.showStatusInStatusBar)
-                .onChange(async (value) => {
-                    this.plugin.settings.showStatusInStatusBar = value;
-                    await this.plugin.saveSettings();
-                }));
     }
 }

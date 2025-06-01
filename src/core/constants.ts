@@ -30,8 +30,7 @@ export const PLUGIN_CONSTANTS = {
 export const DEFAULT_SETTINGS = {
     svnBinaryPath: 'svn',
     commitMessage: 'Update from Obsidian',
-    autoCommit: false,
-    showStatusInStatusBar: true
+    autoCommit: false
 };
 
 export const SVN_ICON_SVG = `
