@@ -11,23 +11,7 @@ export class FileHistoryView extends ItemView {
     private plugin: ObsidianSvnPlugin;
     private svnClient: SVNClient;
     private currentFile: TFile | null = null;
-    private isRendering: boolean = false;
-    private renderTimeout: NodeJS.Timeout | null = null;
-    
-    // UI Caching system
-    private viewCache: Map<string, string> = new Map(); // filename -> cached HTML
-    private statusCache: Map<string, { status: string, className: string }> = new Map();
-    private lastRenderTime: number = 0;
-    private cacheTimeout: number = 5000; // Cache for 5 seconds
-    private isExternalRefresh: boolean = false;
-    
-    // Persistent DOM elements to prevent rebuilding
-    private persistentContainer: HTMLElement | null = null;
-    private persistentToolbar: HTMLElement | null = null;
-    private persistentInfoPanel: HTMLElement | null = null;
-    private persistentStatusDisplay: HTMLElement | null = null;
-    private persistentContentArea: HTMLElement | null = null;
-    private isDomInitialized: boolean = false;
+    private infoPanel: HTMLElement | null = null;
 
     constructor(leaf: WorkspaceLeaf, plugin: ObsidianSvnPlugin) {
         super(leaf);
@@ -48,8 +32,6 @@ export class FileHistoryView extends ItemView {
     }
 
     async onOpen() {
-        // Force complete cleanup and re-initialization
-        this.resetDomState();
         this.containerEl.empty();
         
         // Listen for active file changes
@@ -61,107 +43,19 @@ export class FileHistoryView extends ItemView {
         
         // Initial render
         this.updateCurrentFile();
-    }
-
-    async refreshView() {
+    }    async refreshView() {
         // Update the SVNClient reference in case it was reinitialized
         this.svnClient = this.plugin.svnClient;
-        // Mark this as an external refresh
-        this.isExternalRefresh = true;
         // Force a re-render of the current view
-        console.log('FileHistoryView: External refresh triggered');
-        this.debouncedRender();
+        this.renderView();
     }
     
-    // Cache management methods
-    private getCacheKey(): string {
-        return this.currentFile ? this.currentFile.path : 'no-file';
-    }
-    
-    private isCacheValid(): boolean {
-        const now = Date.now();
-        return (now - this.lastRenderTime) < this.cacheTimeout;
-    }
-    
-    private cacheViewContent(content: string) {
-        const key = this.getCacheKey();
-        this.viewCache.set(key, content);
-        this.lastRenderTime = Date.now();
-    }
-    
-    private getCachedViewContent(): string | null {
-        const key = this.getCacheKey();
-        return this.viewCache.get(key) || null;
-    }
-    
-    private cacheStatusContent(status: string, className: string) {
-        const key = this.getCacheKey();
-        this.statusCache.set(key, { status, className });
-    }
-    
-    private getCachedStatusContent(): { status: string, className: string } | null {
-        const key = this.getCacheKey();
-        return this.statusCache.get(key) || null;
-    }
-    
-    private shouldUseCachedContent(): boolean {
-        return this.isExternalRefresh && this.isCacheValid() && this.getCachedViewContent() !== null;
-    }
 
-    private debouncedRender() {
-        // If DOM is already initialized and this is an external refresh, just update content
-        if (this.isDomInitialized && this.isExternalRefresh) {
-            console.log('FileHistoryView: External refresh detected, updating content only');
-            this.updateViewContent();
-            this.isExternalRefresh = false;
-            return;
-        }
-        
-        // Clear any existing timeout
-        if (this.renderTimeout) {
-            clearTimeout(this.renderTimeout);
-        }
-        
-        // Set a new timeout to render after a short delay
-        this.renderTimeout = setTimeout(() => {
-            this.renderView();
-            this.renderTimeout = null;
-            this.isExternalRefresh = false; // Reset flag after render
-        }, 50); // 50ms debounce
-    }
-    
-    private renderCachedContent() {
-        const cachedContent = this.getCachedViewContent();
-        if (cachedContent) {
-            this.containerEl.innerHTML = cachedContent;
-            // Add visual indicator that this is cached content
-            this.containerEl.addClass('svn-cached-content');
-            console.log('FileHistoryView: Served cached content to prevent flashing');
-            
-            // Remove cached indicator after a brief moment
-            setTimeout(() => {
-                this.containerEl.removeClass('svn-cached-content');
-            }, 200);
-        }
-    }
-    
-    private scheduleBackgroundRender() {
-        // Schedule a background render after a delay to update data
-        setTimeout(() => {
-            this.isExternalRefresh = false;
-            this.renderView();
-        }, 1000); // 1 second delay for background update
-    }
 
     async refreshStatus() {
         // Only refresh the status display without rebuilding the entire view
-        if (!this.currentFile || !this.persistentStatusDisplay) {
-            return;
-        }
-        
-        // Update content in place without destroying the element
-        this.persistentStatusDisplay.empty();
-        await this.renderStatusContent(this.persistentStatusDisplay);
+        // In the new approach, just re-render the view
+        this.renderView();
     }
 
     private async renderStatusContent(statusEl: HTMLElement) {
@@ -233,165 +127,60 @@ export class FileHistoryView extends ItemView {
     }
 
     private renderView() {
-        // Prevent multiple simultaneous renders
-        if (this.isRendering) {
-            return;
-        }
-        
-        this.isRendering = true;
-        
-        try {
-            // Initialize persistent DOM structure if not already done
-            if (!this.isDomInitialized) {
-                this.initializePersistentDom();
-            }
-            
-            // Update content without rebuilding DOM structure
-            this.updateViewContent();
-            
-        } finally {
-            this.isRendering = false;
-        }
-    }
-    
-    private initializePersistentDom() {
-        // Prevent double initialization
-        if (this.isDomInitialized) {
-            console.log('FileHistoryView: DOM already initialized, skipping');
-            return;
-        }
-        
-        // Ensure container is completely clean
         this.containerEl.empty();
-        
-        // Create persistent container structure
-        this.persistentContainer = this.containerEl.createEl('div', { cls: 'svn-view-container' });
-        
-        // Create persistent toolbar
-        this.persistentToolbar = this.persistentContainer.createEl('div', { cls: 'nav-header' });
-        this.renderToolbar(this.persistentToolbar);
-        
-        // Create persistent info panel (initially hidden)
-        this.persistentInfoPanel = this.persistentContainer.createEl('div', { cls: 'svn-info-panel' });
-        this.persistentInfoPanel.style.display = 'none';
-        
-        // Create persistent status display
-        this.persistentStatusDisplay = this.persistentContainer.createEl('div', { cls: 'svn-status-display' });
-        
-        // Create persistent content area
-        this.persistentContentArea = this.persistentContainer.createEl('div', { cls: 'svn-history-content' });
-        
-        this.isDomInitialized = true;
-        console.log('FileHistoryView: Initialized persistent DOM structure');
-    }
-    
-    private updateViewContent() {
-        if (!this.persistentContentArea || !this.persistentStatusDisplay) {
-            return;
-        }
-        
-        if (!this.currentFile) {
-            // Update content area for no file selected
-            this.persistentContentArea.empty();
-            this.persistentContentArea.createEl('p', { 
-                text: 'No file selected', 
-                cls: 'svn-no-file' 
-            });
-            
-            // Clear status display
-            this.persistentStatusDisplay.empty();
-            return;
-        }
-        
-        // Update status display
-        this.updateStatusDisplay();
-        
-        // Update main content area
-        this.updateMainContent();
-    }
-    
-    private async updateStatusDisplay() {
-        if (!this.persistentStatusDisplay) return;
-        
-        // Add visual feedback
-        this.persistentStatusDisplay.addClass('updating');
-        
-        // Clear and update status without destroying the element
-        this.persistentStatusDisplay.empty();
-        await this.renderStatusContent(this.persistentStatusDisplay);
-        
-        // Remove visual feedback
-        this.persistentStatusDisplay.removeClass('updating');
-    }
-    
-    private async updateMainContent() {
-        if (!this.persistentContentArea) return;
-        
-        // Add visual feedback
-        this.persistentContentArea.addClass('updating');
-        
-        // Clear and update content without destroying the element
-        this.persistentContentArea.empty();
-        await this.loadFileHistory(this.persistentContentArea);
-        
-        // Remove visual feedback
-        this.persistentContentArea.removeClass('updating');
+        // Toolbar
+        const toolbar = this.containerEl.createEl('div', { cls: 'nav-header' });
+        this.renderToolbar(toolbar);
+        // Info panel (hidden by default)
+        this.infoPanel = this.containerEl.createEl('div', { cls: 'svn-info-panel' });
+        this.infoPanel.style.display = 'none';
+        // Status display
+        const statusDisplay = this.containerEl.createEl('div', { cls: 'svn-status-display' });
+        this.renderStatusContent(statusDisplay);
+        // Main content area
+        const contentArea = this.containerEl.createEl('div', { cls: 'svn-history-content' });
+        this.loadFileHistory(contentArea);
     }
 
     private renderToolbar(container: HTMLElement) {
         // Clear existing toolbar content if any
         container.empty();
-        
         const toolbarEl = container.createEl('div', { cls: 'nav-buttons-container' });
-
-        // Commit button
         new ButtonComponent(toolbarEl)
             .setIcon('check')
             .setTooltip('Commit file')
             .setClass('clickable-icon')
             .onClick(() => this.quickCommit());
-        
-        // Diff button
         new ButtonComponent(toolbarEl)
             .setIcon('file-diff')
             .setTooltip('Show diff')
             .setClass('clickable-icon')
             .onClick(() => this.showCurrentDiff());
-        
-        // Blame button
         new ButtonComponent(toolbarEl)
             .setIcon('eye')
             .setTooltip('Show blame/annotate')
             .setClass('clickable-icon')
             .onClick(() => this.showBlame());
-        
-        // Info button
         new ButtonComponent(toolbarEl)
             .setIcon('info')
             .setTooltip('Show file info')
             .setClass('clickable-icon')
             .onClick(() => this.toggleInfoDisplay());
-        
-        // Revert button
         new ButtonComponent(toolbarEl)
             .setIcon('undo')
             .setTooltip('Revert file')
             .setClass('clickable-icon')
             .onClick(() => this.revertFile());
-
-        // Remove from SVN button
         new ButtonComponent(toolbarEl)
             .setIcon('trash')
             .setTooltip('Remove file from version control')
             .setClass('clickable-icon')
             .onClick(() => this.removeFromSvn());
-
-        // Refresh button
         new ButtonComponent(toolbarEl)
             .setIcon('refresh-cw')
             .setTooltip('Refresh history')
             .setClass('clickable-icon')
-            .onClick(() => this.updateViewContent()); // Changed to use updateViewContent instead of renderView
+            .onClick(() => this.refreshView());
     }
 
     private async renderStatusDisplay(container: HTMLElement) {
@@ -407,7 +196,7 @@ export class FileHistoryView extends ItemView {
         const activeFile = this.app.workspace.getActiveFile();
         if (activeFile !== this.currentFile) {
             this.currentFile = activeFile;
-            this.isExternalRefresh = false; // This is a file change, not an external refresh
+            // No external refresh flag needed
             this.renderView();
         }
     }
@@ -444,8 +233,7 @@ export class FileHistoryView extends ItemView {
                 this.renderNotInSvn(container);
                 return;
             }
-            
-            // Try to get file history
+              // Get complete file history from repository (not limited by working copy revision)
             const history = await this.svnClient.getFileHistory(this.currentFile.path);
             loadingEl.remove();
             
@@ -666,9 +454,7 @@ export class FileHistoryView extends ItemView {
                 historyContainer.createEl('div', { cls: 'svn-separator' });
             }
         });
-    }
-
-    private async checkoutRevision(revision: string) {
+    }    private async checkoutRevision(revision: string) {
         if (!this.currentFile) return;
         
         try {
@@ -682,6 +468,9 @@ export class FileHistoryView extends ItemView {
             }
             
             new Notice(`Checked out revision ${revision}`);
+            
+            // Do NOT refresh the view here - we want to keep showing the full history
+            // The file content has been updated, but the history display should remain unchanged
             
         } catch (error) {
             console.error('Failed to checkout revision:', error);
@@ -848,17 +637,16 @@ export class FileHistoryView extends ItemView {
     }
 
     private async toggleInfoDisplay() {
-        if (!this.persistentInfoPanel) return;
-        
+        if (!this.infoPanel) return;
         // Toggle visibility
-        if (this.persistentInfoPanel.style.display === 'none' || !this.persistentInfoPanel.style.display) {
+        if (this.infoPanel.style.display === 'none' || !this.infoPanel.style.display) {
             // Show the panel
-            this.persistentInfoPanel.style.display = 'block';
-            await this.loadInfoContent(this.persistentInfoPanel);
+            this.infoPanel.style.display = 'block';
+            await this.loadInfoContent(this.infoPanel);
         } else {
             // Hide the panel
-            this.persistentInfoPanel.style.display = 'none';
-            this.persistentInfoPanel.empty();
+            this.infoPanel.style.display = 'none';
+            this.infoPanel.empty();
         }
     }
 
@@ -939,64 +727,11 @@ export class FileHistoryView extends ItemView {
     }
 
     async onClose() {
-        // Cleanup caches and timeouts
-        this.clearCache();
-        if (this.renderTimeout) {
-            clearTimeout(this.renderTimeout);
-            this.renderTimeout = null;
-        }
-        
-        // Clean up persistent DOM references
-        this.resetDomState();
+        // No persistent DOM or cache to clean up anymore
     }
     
-    private clearCache() {
-        this.viewCache.clear();
-        this.statusCache.clear();
-        this.lastRenderTime = 0;
-    }
+
     
     // Public methods for external cache management
-    public forceCacheRefresh() {
-        this.clearCache();
-        this.isExternalRefresh = false;
-        this.renderView();
-    }
-    
-    public warmCache() {
-        // Pre-render content to cache for smoother experience
-        if (this.currentFile && !this.isRendering) {
-            this.renderView();
-        }
-    }
-    
-    public setCacheTimeout(timeout: number) {
-        this.cacheTimeout = timeout;
-    }
 
-    // Public method to force complete re-initialization (for troubleshooting)
-    public forceFullReinit() {
-        console.log('FileHistoryView: Forcing complete re-initialization');
-        this.resetDomState();
-        this.clearCache();
-        this.renderView();
-    }
-    
-    // Public method to check if DOM is stable
-    public isDomStable(): boolean {
-        return this.isDomInitialized && 
-               this.persistentContainer !== null && 
-               this.persistentContentArea !== null;
-    }
-
-    // Reset DOM state to prevent duplication
-    private resetDomState() {
-        this.persistentContainer = null;
-        this.persistentToolbar = null;
-        this.persistentInfoPanel = null;
-        this.persistentStatusDisplay = null;
-        this.persistentContentArea = null;
-        this.isDomInitialized = false;
-        console.log('FileHistoryView: DOM state reset');
-    }
 }

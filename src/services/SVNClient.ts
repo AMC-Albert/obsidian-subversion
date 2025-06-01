@@ -50,7 +50,8 @@ export class SVNClient {
                 throw new Error('File is not in an SVN working copy');
             }
             
-            const command = `${this.svnPath} log --xml "${absolutePath}"`;
+            // Get complete history from repository (not just working copy)
+            const command = `${this.svnPath} log --xml -r HEAD:1 "${absolutePath}"`;
             const { stdout } = await execPromise(command, { cwd: workingCopyRoot });
             return this.parseXmlLog(stdout);
         } catch (error) {
