@@ -21,17 +21,21 @@
 
 .svn-status-display {
     /* Prevent status area from collapsing */
-    min-height: 20px;
-    margin: 8px 0;
+    font-size: var(--font-ui-small);
+    padding-left: var(--size-4-4);
+    padding-right: var(--size-4-4);
 }
 
-/* Anti-flashing for content updates */
-.svn-history-content.updating {
-    opacity: 0.7;
+/* Status display icons */
+.svn-status-icon {
+    display: inline-block;
+    width: 1.5em;
+    text-align: center;
+    margin-right: 1em;
 }
 
-.svn-status-display.updating {
-    opacity: 0.7;
+.svn-status-label {
+    display: inline-block;
 }
 
 /* Status header in history view */
@@ -73,17 +77,6 @@
 }
 
 /* Status bar indicators */
-.status-bar-item.svn-status-clean { color: var(--text-success); }
-.status-bar-item.svn-status-modified { color: var(--text-warning); }
-.status-bar-item.svn-status-error { color: var(--text-error); }
-
-/* Status display in history view */
-.svn-status-display {
-    padding: var(--size-2-2) var(--size-4-3);
-    border-bottom: 1px solid var(--background-modifier-border);
-    font-size: var(--font-ui-small);
-}
-
 .svn-status-text.svn-status-clean { color: var(--text-success); }
 .svn-status-text.svn-status-modified { color: var(--text-warning); }
 .svn-status-text.svn-status-added { color: var(--text-success); }
@@ -366,18 +359,6 @@
     font-style: italic;
 }
 
-/* Custom button container for SVN choice views */
-.svn-button-container {
-    display: flex;
-    gap: var(--size-4-2);
-    margin-top: var(--size-4-4);
-    flex-wrap: wrap;
-}
-
-.svn-button-container .mod-cta {
-    flex: 0 0 auto;
-}
-
 /* SVN History List Styles */
 .svn-history-list {
     list-style: none;
@@ -401,7 +382,8 @@
 
 .svn-history-content {
     flex: 1;
-    min-width: 0;
+    padding: var(--size-4-4);
+    margin-top: var(--size-4-2);
 }
 
 .svn-history-header {

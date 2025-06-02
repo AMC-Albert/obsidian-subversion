@@ -82,27 +82,24 @@ export class SVNRepositoryHandler {
                 this.renderCheckoutOptions(setupEl, validation.repoPath!, currentFile);
             }
         });
-    }
-
-    private renderRepositoryError(container: HTMLElement, validation: any, currentFile: TFile | null): void {
-        container.createEl('h3', { 
-            text: 'SVN Repository Setup Required',
-            cls: 'setting-item-name'
-        });
-
-        container.createEl('p', { 
-            text: validation.error,
-            cls: 'setting-item-description mod-warning'
-        });
-
+    }    private renderRepositoryError(container: HTMLElement, validation: any, currentFile: TFile | null): void {
         const settings = this.plugin.settings;
+        
         if (!settings.repositoryName) {
-            container.createEl('p', { 
-                text: 'Please configure a repository name in the plugin settings first.',
+            // Create settings configuration section
+            const settingItem = container.createEl('div', { cls: 'setting-item' });
+            const settingInfo = settingItem.createEl('div', { cls: 'setting-item-info' });
+            settingInfo.createEl('div', { 
+                text: 'Repository Configuration Required',
+                cls: 'setting-item-name'
+            });
+            settingInfo.createEl('div', { 
+                text: 'Configure a repository name in the plugin settings to get started with SVN version control.',
                 cls: 'setting-item-description'
             });
             
-            new ButtonComponent(container)
+            const settingControl = settingItem.createEl('div', { cls: 'setting-item-control' });
+            new ButtonComponent(settingControl)
                 .setButtonText('Open Settings')
                 .setClass('mod-cta')
                 .onClick(async () => {
@@ -114,50 +111,83 @@ export class SVNRepositoryHandler {
                     } catch (error) {
                         console.error('Failed to open settings:', error);
                     }
-                });        } else {
+                });
+        } else {
             // Repository name is configured but repo doesn't exist
             console.log('[SVN RepositoryHandler] Repository name configured:', settings.repositoryName);
             console.log('[SVN RepositoryHandler] Validation error:', validation.error);
             
-            container.createEl('p', { 
-                text: `You can create a new repository '${settings.repositoryName}' or checkout an existing one.`,
+            // Create new repository section
+            const newRepoItem = container.createEl('div', { cls: 'setting-item' });
+            const newRepoInfo = newRepoItem.createEl('div', { cls: 'setting-item-info' });
+            newRepoInfo.createEl('div', { 
+                text: 'Create New Repository',
+                cls: 'setting-item-name'
+            });
+            newRepoInfo.createEl('div', { 
+                text: `Create a new SVN repository named '${settings.repositoryName}' in your vault.`,
                 cls: 'setting-item-description'
             });
-
-            const buttonContainer = container.createEl('div', { cls: 'svn-button-container' });
-
-            new ButtonComponent(buttonContainer)
-                .setButtonText('Create New Repository')
+            
+            const newRepoControl = newRepoItem.createEl('div', { cls: 'setting-item-control' });
+            new ButtonComponent(newRepoControl)
+                .setButtonText('Create')
                 .setClass('mod-cta')
                 .onClick(() => this.createRepository(currentFile));
 
-            new ButtonComponent(buttonContainer)
-                .setButtonText('Checkout Existing Repository')
+            // Checkout existing repository section
+            const checkoutItem = container.createEl('div', { cls: 'setting-item' });
+            const checkoutInfo = checkoutItem.createEl('div', { cls: 'setting-item-info' });
+            checkoutInfo.createEl('div', { 
+                text: 'Checkout Existing Repository',
+                cls: 'setting-item-name'
+            });
+            checkoutInfo.createEl('div', { 
+                text: 'Connect to an existing SVN repository by providing its URL.',
+                cls: 'setting-item-description'
+            });
+            
+            const checkoutControl = checkoutItem.createEl('div', { cls: 'setting-item-control' });
+            new ButtonComponent(checkoutControl)
+                .setButtonText('Checkout')
                 .onClick(() => this.showCheckoutModal(currentFile));
         }
-    }
-    private renderCheckoutOptions(container: HTMLElement, repoPath: string, currentFile: TFile | null): void {
-        container.createEl('div', { 
-            text: 'Working copy setup',
+    }    private renderCheckoutOptions(container: HTMLElement, repoPath: string, currentFile: TFile | null): void {
+        // Checkout repository section
+        const checkoutItem = container.createEl('div', { cls: 'setting-item' });
+        const checkoutInfo = checkoutItem.createEl('div', { cls: 'setting-item-info' });
+        checkoutInfo.createEl('div', { 
+            text: 'Checkout Repository',
             cls: 'setting-item-name'
         });
-
-        container.createEl('div', { 
-            text: 'The repository exists but this file is not in a working copy. You need to checkout the repository to start tracking files.',
+        checkoutInfo.createEl('div', { 
+            text: 'The repository exists but needs to be checked out to start tracking files.',
             cls: 'setting-item-description'
         });
-
-        const buttonContainer = container.createEl('div', { cls: 'svn-button-container' });
-
-        new ButtonComponent(buttonContainer)
-            .setButtonText('Checkout repository')
+        
+        const checkoutControl = checkoutItem.createEl('div', { cls: 'setting-item-control' });
+        new ButtonComponent(checkoutControl)
+            .setButtonText('Checkout')
             .setClass('mod-cta')
             .onClick(() => this.checkoutRepository(repoPath, currentFile));
 
-        new ButtonComponent(buttonContainer)
-            .setButtonText('Initialize working copy')
+        // Initialize working copy section
+        const initItem = container.createEl('div', { cls: 'setting-item' });
+        const initInfo = initItem.createEl('div', { cls: 'setting-item-info' });
+        initInfo.createEl('div', { 
+            text: 'Initialize Working Copy',
+            cls: 'setting-item-name'
+        });
+        initInfo.createEl('div', { 
+            text: 'Create a working copy of the repository in your vault directory.',
+            cls: 'setting-item-description'
+        });
+        
+        const initControl = initItem.createEl('div', { cls: 'setting-item-control' });
+        new ButtonComponent(initControl)
+            .setButtonText('Initialize')
             .onClick(() => this.initWorkingCopy(repoPath, currentFile));
-    }    private async createRepository(currentFile: TFile | null): Promise<void> {
+    }private async createRepository(currentFile: TFile | null): Promise<void> {
         try {
             const settings = this.plugin.settings;
             // Use the repository name from settings (which now has a default value)
