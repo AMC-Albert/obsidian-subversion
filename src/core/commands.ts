@@ -1,5 +1,6 @@
 import { Notice, FileSystemAdapter } from 'obsidian';
 import { SVNClient } from '../services/SVNClient';
+import { CreateRepoModal } from '../ui/modals';
 import type ObsidianSvnPlugin from '../main';
 
 export function registerCommands(plugin: ObsidianSvnPlugin) {
@@ -199,6 +200,38 @@ export function registerCommands(plugin: ObsidianSvnPlugin) {
                 new Notice('File added to SVN');
             } catch (error) {
                 console.error('SVN add file error:', error);
+                new Notice(`Error: ${error.message}`);
+            }
+        }
+    });    plugin.addCommand({
+        id: 'svn-create-repository',
+        name: 'Create SVN repository',
+        callback: async () => {
+            try {
+                // Get the default repository name from settings (strip any dots)
+                const defaultRepoName = plugin.settings.repositoryName?.replace(/^\.+/, '') || '';
+                
+                const modal = new CreateRepoModal(
+                    plugin.app,
+                    plugin,
+                    defaultRepoName,
+                    async (cleanRepoName: string) => {
+                        try {
+                            await svnClient.createRepository(cleanRepoName);
+                            const hiddenRepoName = `.${cleanRepoName}`;
+                            new Notice(`SVN repository '${hiddenRepoName}' created successfully!`);
+                        } catch (error) {
+                            console.error('SVN create repository error:', error);
+                            new Notice(`Error creating repository: ${error.message}`);
+                        }
+                    },
+                    () => {
+                        new Notice('Repository creation cancelled.');
+                    }
+                );
+                modal.open();
+            } catch (error) {
+                console.error('SVN create repository modal error:', error);
                 new Notice(`Error: ${error.message}`);
             }
         }

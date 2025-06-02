@@ -27,6 +27,19 @@ export class SvnSettingTab extends PluginSettingTab {
                 }));
 
         new Setting(containerEl)
+            .setName('Repository name')
+            .setDesc('Default name for your SVN repository (without the dot prefix). This will be used as the default when creating a new repository.')
+            .addText(text => text
+                .setPlaceholder('my-vault-repo')
+                .setValue(this.plugin.settings.repositoryName || '')
+                .onChange(async (value) => {
+                    // Strip any leading dots to ensure consistent handling
+                    const cleanValue = value.replace(/^\.+/, '');
+                    this.plugin.settings.repositoryName = cleanValue;
+                    await this.plugin.saveSettings();
+                }));
+
+        new Setting(containerEl)
             .setName('Auto-commit')
             .setDesc('Automatically commit changes when files are saved')
             .addToggle(toggle => toggle

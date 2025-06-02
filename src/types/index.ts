@@ -34,6 +34,7 @@ export interface SvnPluginSettings {
     svnBinaryPath: string;
     commitMessage: string;
     autoCommit: boolean;
+    repositoryName: string;
 }
 
 export interface PluginConstants {

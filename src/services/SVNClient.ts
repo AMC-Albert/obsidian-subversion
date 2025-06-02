@@ -566,16 +566,33 @@ export class SVNClient {
                 date: dateMatch ? dateMatch[1] : '',
                 message: messageMatch ? messageMatch[1].trim() : ''
             });
-        }
-        
+        }        
         return entries;
     }
 
     private parseStatus(statusOutput: string): SvnStatus[] {
-        const lines = statusOutput.split('\n').filter(line => line.trim());
+        const lines = statusOutput.split('\n').filter(line => line.trim() !== '');
         return lines.map(line => ({
             status: line.charAt(0),
             filePath: line.substring(8).trim()
         }));
+    }    async createRepository(repoName: string): Promise<void> {
+        try {
+            if (!this.vaultPath) {
+                throw new Error('Vault path not set');
+            }
+
+            // The repoName should already be cleaned by the modal
+            const hiddenRepoName = `.${repoName}`;
+            const repoPath = join(this.vaultPath, hiddenRepoName);
+
+            // Create the repository using svnadmin create
+            const command = `svnadmin create "${repoPath}"`;
+            await execPromise(command);
+
+            console.log(`SVN repository created at: ${repoPath}`);
+        } catch (error) {
+            throw new Error(`Failed to create SVN repository: ${error.message}`);
+        }
     }
 }
