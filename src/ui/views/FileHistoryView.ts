@@ -53,6 +53,8 @@ export class FileHistoryView extends ItemView {
     // Store the last direct status data to override stale state data
     private lastDirectStatusData: { isWorkingCopy: boolean; status: any[]; info: any | null } | null = null;
     private suppressNextUIStateChange = false;
+    // Centralized protection window constant
+    private static readonly PROTECTION_WINDOW_MS = 5000;
 
     constructor(leaf: WorkspaceLeaf, plugin: ObsidianSvnPlugin) {
         super(leaf);
@@ -133,7 +135,7 @@ export class FileHistoryView extends ItemView {
     }
     private async handleUIStateChange(state: UIState): Promise<void> {
         // Override state data status with recent direct status if within protection window
-        const protectionWindowMs = 5000;
+        const protectionWindowMs = FileHistoryView.PROTECTION_WINDOW_MS;
         if (this.lastDirectStatusData && Date.now() - this.lastDirectStatusUpdateTime < protectionWindowMs && state.data) {
             console.log('[SVN FileHistoryView] Overriding state data.status with direct status override');
             state.data.status = this.lastDirectStatusData.status as any;
@@ -165,7 +167,7 @@ export class FileHistoryView extends ItemView {
             }
         }
         // If we have fresh direct status data, render override and skip state-driven UI updates
-        const protectionWindowMs = 5000;
+        // Removed duplicate constant; using class-level PROTECTION_WINDOW_MS
         if (this.lastDirectStatusData && Date.now() - this.lastDirectStatusUpdateTime < protectionWindowMs) {
             console.log('[SVN FileHistoryView] Immediate override of status display with direct status data');
             if (this.statusContainer) {
@@ -830,7 +832,8 @@ export class FileHistoryView extends ItemView {
             this.isDirectStatusUpdate = true;
             
             // Get fresh status data directly without retry logic
-            const [isWorkingCopy, statusResult, infoResult] = await Promise.all([
+            // Allow statusResult reassignment for whitespace-only filtering
+            let [isWorkingCopy, statusResult, infoResult] = await Promise.all([
                 this.svnClient.isWorkingCopy(this.currentFile.path),
                 this.svnClient.getStatus(this.currentFile.path).catch(() => []),
                 this.svnClient.getInfo(this.currentFile.path).catch(() => null)
@@ -851,26 +854,27 @@ export class FileHistoryView extends ItemView {
                            item.filePath.endsWith(this.currentFile!.path);
                 });
                 
-                if (modifiedItem) {
-                    try {
-                        const diff = await this.svnClient.getDiff(this.currentFile.path);
-                        const hasActualChanges = diff.trim().length > 0;
-                        
-                        // Analyze the type of changes
-                        const changeAnalysis = this.analyzeDiffChanges(diff);
-                        console.log('[SVN FileHistoryView] File shows as modified - checking diff:', {
-                            filePath: this.currentFile.path,
-                            diffLength: diff.length,
-                            diffContent: diff.substring(0, 200) + (diff.length > 200 ? '...' : ''),
-                            hasActualChanges,
-                            changeType: changeAnalysis.type,
-                            isWhitespaceOnly: changeAnalysis.isWhitespaceOnly,
-                            description: changeAnalysis.description
-                        });
-                    } catch (error) {
-                        console.error('[SVN FileHistoryView] Error getting diff for modified file:', error);
+            if (modifiedItem) {
+                try {
+                    const diff = await this.svnClient.getDiff(this.currentFile.path);
+                    const changeAnalysis = this.analyzeDiffChanges(diff);
+                    console.log('[SVN FileHistoryView] File shows as modified - checking diff:', {
+                        filePath: this.currentFile.path,
+                        diffLength: diff.length,
+                        diffContent: diff.substring(0, 200) + (diff.length > 200 ? '...' : ''),
+                        changeType: changeAnalysis.type,
+                        isWhitespaceOnly: changeAnalysis.isWhitespaceOnly,
+                        description: changeAnalysis.description
+                    });
+                    // If only whitespace changes, remove this modified flag so UI shows 'Up to date'
+                    if (changeAnalysis.isWhitespaceOnly) {
+                        console.log('[SVN FileHistoryView] Detected whitespace-only changes; removing modified status');
+                        statusResult = statusResult.filter(item => item !== modifiedItem);
                     }
+                } catch (error) {
+                    console.error('[SVN FileHistoryView] Error getting diff for modified file:', error);
                 }
+            }
             }
             
             const statusData = {
