@@ -51,40 +51,51 @@ export class SVNHistoryRenderer {
                     messageEl.setText(entry.message);
                 }                // Add action buttons container (right-aligned and vertically centered)
                 const actionsEl = listItem.createEl('div', { cls: 'svn-history-actions' });
-                  // Diff button (not available for first revision)
-                if (index > 0) {
-                    const diffBtn = new ButtonComponent(actionsEl)
-                        .setIcon('file-diff')
-                        .setTooltip(`Show diff from r${history[index - 1].revision} to r${entry.revision}`)
-                        .setClass('clickable-icon');
-                    
-                    diffBtn.buttonEl.addEventListener('click', (evt) => {
-                        evt.preventDefault();
-                        evt.stopPropagation();
-                        this.showDiff(filePath, parseInt(history[index - 1].revision), parseInt(entry.revision));
-                    });
-                }// Checkout button  
-                const checkoutBtn = new ButtonComponent(actionsEl)
-                    .setIcon('circle-arrow-down')
-                    .setTooltip(`Checkout revision ${entry.revision}`)
-                    .setClass('clickable-icon');
-                  // Add click handler directly to the button element
-                checkoutBtn.buttonEl.addEventListener('click', async (evt) => {
-                    evt.preventDefault();
-                    evt.stopPropagation();
-                    
-                    try {
-                        await this.checkoutRevision(filePath, entry.revision);
-                    } catch (error) {
-                        console.error('Error in checkout button handler:', error);
-                    }
-                });
+                
+                this.addHistoryItemActions(actionsEl, filePath, entry, index, history);
             });
         }).catch((error: any) => {
             historyEl.createEl('p', { 
                 text: `Error loading history: ${error.message}`,
                 cls: 'svn-error'
             });
+        });
+    }
+
+    /**
+     * Add action buttons for a history item (used by data bus system)
+     */
+    addHistoryItemActions(actionsEl: HTMLElement, filePath: string, entry: SvnLogEntry, index: number, history: SvnLogEntry[]): void {
+        // Diff button (not available for first revision)
+        if (index > 0) {
+            const diffBtn = new ButtonComponent(actionsEl)
+                .setIcon('file-diff')
+                .setTooltip(`Show diff from r${history[index - 1].revision} to r${entry.revision}`)
+                .setClass('clickable-icon');
+            
+            diffBtn.buttonEl.addEventListener('click', (evt) => {
+                evt.preventDefault();
+                evt.stopPropagation();
+                this.showDiff(filePath, parseInt(history[index - 1].revision), parseInt(entry.revision));
+            });
+        }
+
+        // Checkout button  
+        const checkoutBtn = new ButtonComponent(actionsEl)
+            .setIcon('circle-arrow-down')
+            .setTooltip(`Checkout revision ${entry.revision}`)
+            .setClass('clickable-icon');
+          
+        // Add click handler directly to the button element
+        checkoutBtn.buttonEl.addEventListener('click', async (evt) => {
+            evt.preventDefault();
+            evt.stopPropagation();
+            
+            try {
+                await this.checkoutRevision(filePath, entry.revision);
+            } catch (error) {
+                console.error('Error in checkout button handler:', error);
+            }
         });
     }
 
@@ -138,11 +149,16 @@ export class SVNHistoryRenderer {
                     8000  // Show for 8 seconds
                 );            } else {
                 new Notice(`Checked out revision ${revision}.`);
-            }
-                console.log(`Checked out revision ${revision} for ${filePath}`);
+            }            console.log(`Checked out revision ${revision} for ${filePath}`);
             
-            // Call refresh immediately - no need for delay since we have debouncing in the view
-            this.refreshCallback();
+            // Force file reload first to ensure Obsidian sees the changes
+            await this.forceFileReload(filePath);
+            
+            // Give a small delay for file system events to propagate, then refresh data
+            setTimeout(() => {
+                console.log('[SVN HistoryRenderer] Triggering refresh after checkout');
+                this.refreshCallback();
+            }, 100);
         } catch (error: any) {
             console.error('Error checking out revision:', error);
             new Notice(`Failed to checkout revision ${revision}: ${error.message}`, 5000);
@@ -155,13 +171,10 @@ export class SVNHistoryRenderer {
                 // Force Obsidian to read the file from disk and trigger change events
                 const content = await this.plugin.app.vault.adapter.read(filePath);
                 
-                // Trigger file modification event to refresh any open editors
+                // Trigger file change event to refresh editors but avoid 'modify' which triggers auto-commit
                 this.plugin.app.vault.trigger('changed', file);
                 
-                // Also trigger a modified event to ensure all listeners are notified
-                this.plugin.app.vault.trigger('modify', file);
-                
-                // Update open editors more efficiently
+                // Update open editors more efficiently without triggering modify events
                 this.plugin.app.workspace.iterateAllLeaves((leaf: WorkspaceLeaf) => {
                     if (leaf.view.getViewType() === 'markdown') {
                         const markdownView = leaf.view as any;

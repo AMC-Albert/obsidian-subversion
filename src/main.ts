@@ -208,20 +208,17 @@ export default class ObsidianSvnPlugin extends Plugin {
         if (activeFile && file.path === activeFile.path) {
             this.scheduleStatusRefresh();
         }
-    }
-
-    /**
+    }    /**
      * Schedule a status refresh with delay
      */
     private scheduleStatusRefresh() {
         if (this.statusUpdateTimer) {
             clearTimeout(this.statusUpdateTimer);
         }
-        
-        this.statusUpdateTimer = window.setTimeout(() => {
+          this.statusUpdateTimer = window.setTimeout(() => {
             this.refreshStatusInViews();
             this.statusUpdateTimer = null;
-        }, 300); // 300ms delay for status updates
+        }, 150); // Reduced delay since FileHistoryView now has intelligent retry logic
     }
 
     /**

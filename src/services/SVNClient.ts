@@ -470,9 +470,10 @@ export class SVNClient {
                 return null;
             }
             throw new SvnCommandError(`Failed to get info for ${filePath}`, error.message, error.code);
-        }    }    private parseInfoXml(xmlOutput: string): SvnInfo | null {
-        console.log('SVN Info XML Output:', xmlOutput);
-        
+        }
+    }
+
+    private parseInfoXml(xmlOutput: string): SvnInfo | null {
         const lines = xmlOutput.split('\n');
         const info: Partial<SvnInfo> = {};
         let inCommitSection = false;
