@@ -159,18 +159,9 @@ export class SVNViewRenderer {
         // Radical anti-flicker approach: Never rebuild content area for loading states
         // Keep existing content visible during brief loading operations
         let shouldRebuild = false;
-        
-        if (state.showLoading) {
-            // We're in a visible loading state
-            // Only rebuild if we have no existing content or we're switching from error/no-file states
-            const hasExistingContent = this.stateManager.getLastContentType() === 'history' || 
-                                     this.stateManager.getLastContentType() === 'added-not-committed' ||
-                                     this.stateManager.getLastContentType() === 'not-in-svn';
-            
-            if (!hasExistingContent) {
-                shouldRebuild = true;
-            }
-            // If we have existing content, keep it visible during loading
+          if (state.showLoading) {
+            // Always show loading states to prevent the UI from appearing stuck
+            shouldRebuild = true;
         } else {
             // We're not in loading state - this is real content
             if (this.stateManager.getLastContentType() === 'loading') {
@@ -187,11 +178,8 @@ export class SVNViewRenderer {
             this.layoutManager.clearContentArea();
             this.historyManager.renderHistoryContentWithState(contentArea, state, currentFile);
         }
-        
-        // Update content type tracking - but don't update to 'loading' if we have existing content
-        if (!state.showLoading || this.stateManager.getLastContentType() === null || this.stateManager.getLastContentType() === 'no-file' || this.stateManager.getLastContentType() === 'error') {
-            this.stateManager.setLastContentType(contentType);
-        }
+          // Update content type tracking
+        this.stateManager.setLastContentType(contentType);
     }
 
     /**
