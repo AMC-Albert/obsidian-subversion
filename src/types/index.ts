@@ -25,6 +25,7 @@ export interface SvnInfo {
     url: string;
     repositoryRoot: string;
     repositoryUuid: string;
+    revision: string;  // Working copy revision
     lastChangedRev: string;
     lastChangedAuthor: string;
     lastChangedDate: string;

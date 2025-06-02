@@ -20,6 +20,10 @@ export class SVNClient {
         this.vaultPath = vaultPath;
     }
 
+    getVaultPath(): string {
+        return this.vaultPath;
+    }
+
     private resolveAbsolutePath(relativePath: string): string {
         if (!this.vaultPath) {
             throw new Error('Vault path not set');
@@ -77,9 +81,7 @@ export class SVNClient {
         } catch (error) {
             throw new Error(`Failed to get file revisions: ${error.message}`);
         }
-    }
-
-    async checkoutRevision(filePath: string, revision: string): Promise<void> {
+    }    async checkoutRevision(filePath: string, revision: string): Promise<void> {
         try {
             const absolutePath = this.resolveAbsolutePath(filePath);
             const workingCopyRoot = this.findSvnWorkingCopy(absolutePath);
@@ -88,8 +90,29 @@ export class SVNClient {
                 throw new Error('File is not in an SVN working copy');
             }
             
-            const command = `${this.svnPath} update -r ${revision} "${absolutePath}"`;
-            await execPromise(command, { cwd: workingCopyRoot });
+            // First, revert any local changes to the file to avoid conflicts
+            try {
+                const revertCommand = `${this.svnPath} revert "${absolutePath}"`;
+                await execPromise(revertCommand, { cwd: workingCopyRoot });
+                console.log('Reverted local changes before checkout');
+            } catch (revertError) {
+                // Ignore revert errors if file has no local changes
+                console.log('No local changes to revert:', revertError.message);
+            }
+            
+            // Add a small delay to ensure file system operations complete
+            await new Promise(resolve => setTimeout(resolve, 100));
+            
+            // Use svn update with specific revision for the single file
+            // This properly updates the working copy metadata while changing just this file
+            const updateCommand = `${this.svnPath} update -r ${revision} "${absolutePath}"`;
+            const result = await execPromise(updateCommand, { cwd: workingCopyRoot });
+            console.log('SVN update result:', result.stdout);
+            
+            // Add another small delay to ensure SVN operations complete
+            await new Promise(resolve => setTimeout(resolve, 100));
+            
+            console.log(`Checked out revision ${revision} for file ${filePath}`);
         } catch (error) {
             throw new Error(`Failed to checkout revision ${revision}: ${error.message}`);
         }
@@ -454,43 +477,73 @@ export class SVNClient {
                 return null;
             }
             throw new SvnCommandError(`Failed to get info for ${filePath}`, error.message, error.code);
-        }
-    }
-
-    private parseInfoXml(xmlOutput: string): SvnInfo | null {
+        }    }    private parseInfoXml(xmlOutput: string): SvnInfo | null {
+        console.log('SVN Info XML Output:', xmlOutput);
+        
         const lines = xmlOutput.split('\n');
         const info: Partial<SvnInfo> = {};
+        let inCommitSection = false;
         
+        // Extract basic info
+        const urlMatch = xmlOutput.match(/<url>(.*?)<\/url>/);
+        if (urlMatch) info.url = urlMatch[1];
+        
+        const repositoryRootMatch = xmlOutput.match(/<repository>[\s\S]*?<root>(.*?)<\/root>/);
+        if (repositoryRootMatch) info.repositoryRoot = repositoryRootMatch[1];
+        
+        const repositoryUuidMatch = xmlOutput.match(/<uuid>(.*?)<\/uuid>/);
+        if (repositoryUuidMatch) info.repositoryUuid = repositoryUuidMatch[1];
+        
+        // Look for entry revision (working copy revision)
+        const entryRevisionMatch = xmlOutput.match(/<entry[^>]*revision="(\d+)"/);
+        if (entryRevisionMatch) {
+            info.revision = entryRevisionMatch[1];
+            console.log('Found entry revision (working copy):', entryRevisionMatch[1]);
+        }
+          // Look for last changed revision, author, and date in the commit section
         for (const line of lines) {
-            if (line.includes('<url>')) {
-                info.url = line.replace(/<\/?url>/g, '').trim();
-            }
-            if (line.includes('<repository>')) {
-                const rootMatch = xmlOutput.match(/<root>(.*?)<\/root>/);
-                if (rootMatch) {
-                    info.repositoryRoot = rootMatch[1];
-                }
-                const uuidMatch = xmlOutput.match(/<uuid>(.*?)<\/uuid>/);
-                if (uuidMatch) {
-                    info.repositoryUuid = uuidMatch[1];
+            if (line.includes('<commit')) {
+                inCommitSection = true;
+                // Check for revision attribute on the same line
+                const commitRevMatch = line.match(/revision="(\d+)"/);
+                if (commitRevMatch) {
+                    console.log('Found commit revision on same line:', commitRevMatch[1]);
+                    info.lastChangedRev = commitRevMatch[1];
                 }
             }
-            if (line.includes('<commit') && line.includes('revision=')) {
+            
+            // Check for revision attribute on the next line after <commit
+            if (inCommitSection && !info.lastChangedRev && line.includes('revision=')) {
                 const revMatch = line.match(/revision="(\d+)"/);
                 if (revMatch) {
+                    console.log('Found commit revision on separate line:', revMatch[1]);
                     info.lastChangedRev = revMatch[1];
                 }
-                const authorMatch = xmlOutput.match(/<author>(.*?)<\/author>/);
-                if (authorMatch) {
-                    info.lastChangedAuthor = authorMatch[1];
+            }
+            
+            if (inCommitSection) {
+                if (line.includes('<author>')) {
+                    const authorMatch = line.match(/<author>(.*?)<\/author>/);
+                    if (authorMatch) {
+                        console.log('Found commit author:', authorMatch[1]);
+                        info.lastChangedAuthor = authorMatch[1];
+                    }
                 }
-                const dateMatch = xmlOutput.match(/<date>(.*?)<\/date>/);
-                if (dateMatch) {
-                    info.lastChangedDate = dateMatch[1];
+                if (line.includes('<date>')) {
+                    const dateMatch = line.match(/<date>(.*?)<\/date>/);
+                    if (dateMatch) {
+                        console.log('Found commit date:', dateMatch[1]);
+                        info.lastChangedDate = dateMatch[1];
+                    }
                 }
+            }
+            
+            if (line.includes('</commit>')) {
+                inCommitSection = false;
             }
         }
         
+        console.log('Parsed SVN Info:', info);
         return info.url ? info as SvnInfo : null;
     }
 

@@ -54,7 +54,7 @@ export default class ObsidianSvnPlugin extends Plugin {
         if (adapter instanceof FileSystemAdapter) {
             this.svnClient.setVaultPath(adapter.getBasePath());
         } else {
-            new Notice('SVN plugin requires file system access and may not work with this vault type');
+            new Notice('SVN plugin requires file system access and may not work with this vault type.');
         }
     }
 
@@ -235,7 +235,7 @@ export default class ObsidianSvnPlugin extends Plugin {
                     const isWorkingCopy = await this.svnClient.isWorkingCopy(file.path);
                     if (isWorkingCopy) {
                         await this.svnClient.commitFile(file.path, this.settings.commitMessage);
-                        new Notice(`Auto-committed: ${file.name}`);
+                        new Notice(`Auto-committed: ${file.name}.`);
                           // Refresh status after auto-commit
                         setTimeout(() => {
                             this.refreshStatusInViews();

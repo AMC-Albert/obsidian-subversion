@@ -28,11 +28,11 @@ export class CommitModal extends Modal {
 
         contentEl.createEl("p", { text: "Enter a commit message:" });
         
-        const inputContainer = contentEl.createDiv('svn-input-container');
+        const inputContainer = contentEl.createDiv('svn-modal-input');
         const input = inputContainer.createEl('input', {
             type: 'text',
             placeholder: this.defaultMessage,
-            cls: 'svn-commit-input'
+            cls: 'svn-modal-input'
         });
         input.value = this.defaultMessage;
         

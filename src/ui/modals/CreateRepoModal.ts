@@ -43,7 +43,7 @@ export class CreateRepoModal extends Modal {
         const buttonRow = contentEl.createDiv('modal-button-container');
         new Setting(buttonRow)
             .addButton(btn => btn
-                .setButtonText('Create Repository')
+                .setButtonText('Create repository')
                 .setClass('mod-cta')
                 .onClick(async () => {
                     const inputValue = input.value.trim();
@@ -55,7 +55,7 @@ export class CreateRepoModal extends Modal {
                     // Clean the repo name (strip any leading dots)
                     const cleanRepoName = inputValue.replace(/^\.+/, '');
                     if (!cleanRepoName) {
-                        new Notice('Repository name cannot be empty');
+                        new Notice('Repository name cannot be empty.');
                         input.focus();
                         return;
                     }
@@ -65,7 +65,7 @@ export class CreateRepoModal extends Modal {
                     try {
                         const exists = await this.plugin.app.vault.adapter.exists(hiddenRepoName);
                         if (exists) {
-                            new Notice(`Directory '${hiddenRepoName}' already exists`);
+                            new Notice(`Directory '${hiddenRepoName}' already exists.`);
                             input.focus();
                             return;
                         }
@@ -104,7 +104,7 @@ export class CreateRepoModal extends Modal {
                 // Clean the repo name (strip any leading dots)
                 const cleanRepoName = inputValue.replace(/^\.+/, '');
                 if (!cleanRepoName) {
-                    new Notice('Repository name cannot be empty');
+                    new Notice('Repository name cannot be empty.');
                     input.focus();
                     return;
                 }
@@ -115,7 +115,7 @@ export class CreateRepoModal extends Modal {
                 try {
                     const exists = await this.plugin.app.vault.adapter.exists(hiddenRepoName);
                     if (exists) {
-                        new Notice(`Directory '${hiddenRepoName}' already exists`);
+                        new Notice(`Directory '${hiddenRepoName}' already exists.`);
                         input.focus();
                         return;
                     }

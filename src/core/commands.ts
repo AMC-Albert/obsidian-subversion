@@ -42,7 +42,7 @@ export function registerCommands(plugin: ObsidianSvnPlugin) {
             try {
                 const filePath = view.file?.path;
                 if (!filePath) {
-                    new Notice('No file is currently open');
+                    new Notice('No file is currently open.');
                     return;
                 }
                 

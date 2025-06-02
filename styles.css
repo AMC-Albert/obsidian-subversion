@@ -19,11 +19,6 @@
     transition: opacity 0.1s ease-in-out;
 }
 
-.svn-history-content {
-    /* Prevent content jumping */
-    min-height: 50px;
-}
-
 .svn-status-display {
     /* Prevent status area from collapsing */
     min-height: 20px;
@@ -96,11 +91,6 @@
 .svn-status-text.svn-status-untracked { color: var(--text-muted); }
 .svn-status-text.svn-status-warning { color: var(--text-warning); }
 .svn-status-text.svn-status-error { color: var(--text-error); }
-
-/* Compact history view - leveraging Obsidian's nav-file structure */
-.svn-history-content {
-    padding: var(--size-4-1) var(--size-4-3) var(--size-4-6) var(--size-4-3);
-}
 
 .svn-history-entry {
     border-bottom: 1px solid var(--background-modifier-border-hover);
@@ -302,7 +292,6 @@
 .svn-blame-col-rev {
     color: var(--text-accent);
     font-weight: var(--font-weight-medium);
-    cursor: pointer;
 }
 
 .svn-blame-col-author {
@@ -375,6 +364,124 @@
     font-size: var(--font-ui-smaller);
     color: var(--text-muted);
     font-style: italic;
+}
+
+/* Custom button container for SVN choice views */
+.svn-button-container {
+    display: flex;
+    gap: var(--size-4-2);
+    margin-top: var(--size-4-4);
+    flex-wrap: wrap;
+}
+
+.svn-button-container .mod-cta {
+    flex: 0 0 auto;
+}
+
+/* SVN History List Styles */
+.svn-history-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.svn-history-item {
+    display: flex;
+    align-items: stretch;
+    border-bottom: 1px solid var(--background-modifier-border-hover);
+    padding: var(--size-4-2);
+    gap: var(--size-4-2);
+    position: relative;
+}
+
+.svn-history-item:hover {
+    background: var(--background-modifier-hover);
+    border-radius: var(--radius-s);
+}
+
+.svn-history-content {
+    flex: 1;
+    min-width: 0;
+}
+
+.svn-history-header {
+    display: flex;
+    align-items: center;
+    gap: var(--size-4-2);
+    margin-bottom: var(--size-2-1);
+}
+
+.svn-history-item .svn-revision {
+    font-size: var(--font-ui-smaller);
+    font-weight: var(--font-weight-semibold);
+    color: var(--text-on-accent);
+    background: var(--interactive-accent);
+    padding: 1px var(--size-2-2);
+    border-radius: var(--radius-s);
+}
+
+.svn-history-item .svn-author {
+    font-size: var(--font-ui-small);
+    font-weight: var(--font-weight-medium);
+    color: var(--text-normal);
+}
+
+.svn-history-item .svn-date {
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+
+.svn-history-item .svn-message {
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+    margin-top: var(--size-2-1);
+    margin-bottom: var(--size-2-1);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.svn-history-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--size-2-1);
+    flex-shrink: 0;
+    padding-left: var(--size-4-2);
+}
+
+/* Enhanced Status Display Styles */
+.svn-status-container {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-2-1);
+}
+
+.svn-status-revision {
+    display: flex;
+    align-items: center;
+    gap: var(--size-2-2);
+    margin-bottom: var(--size-2-1);
+    font-size: var(--font-ui-smaller);
+}
+
+.svn-revision-badge {
+    color: var(--text-on-accent);
+    background: var(--interactive-accent);
+    padding: 1px var(--size-2-2);
+    border-radius: var(--radius-s);
+    font-weight: var(--font-weight-semibold);
+    font-size: var(--font-ui-smaller);
+}
+
+.svn-revision-author {
+    color: var(--text-normal);
+    font-weight: var(--font-weight-medium);
+}
+
+.svn-revision-date {
+    color: var(--text-muted);
 }
 
 /* Minimal responsiveness */
