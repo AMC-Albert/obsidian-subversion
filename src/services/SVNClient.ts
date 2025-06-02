@@ -10,10 +10,21 @@ const execPromise = promisify(exec);
 export class SVNClient {
 	private svnPath: string;
 	private vaultPath: string;
+	private statusRequestCache = new Map<string, Promise<SvnStatus[]>>();
+	
+	// Callback for notifying when cache should be cleared
+	private cacheInvalidationCallback?: () => void;
 
 	constructor(svnPath: string = 'svn', vaultPath: string = '') {
 		this.svnPath = svnPath;
 		this.vaultPath = vaultPath;
+	}
+
+	/**
+	 * Set callback for cache invalidation notifications
+	 */
+	setCacheInvalidationCallback(callback: () => void): void {
+		this.cacheInvalidationCallback = callback;
 	}
 
 	setVaultPath(vaultPath: string) {
@@ -136,13 +147,15 @@ export class SVNClient {
 				}
 				
 				throw new Error(`Failed to commit file: ${stderr}`);
-			}
-			console.log(`[SVN Client] File ${fullPath} committed successfully: ${stdout}`);
+			}			console.log(`[SVN Client] File ${fullPath} committed successfully: ${stdout}`);
 		} catch (error) {
 			console.error(`[SVN Client] Exception in commitFile for ${fullPath}: ${error}`);
 			throw error; // Re-throw the original error for higher-level handling
 		}
-	}	async ensureParentDirectoriesAreVersioned(filePath: string): Promise<void> {
+		
+		// Clear cache after commit operation to ensure fresh status data
+		this.clearStatusCache();
+	}async ensureParentDirectoriesAreVersioned(filePath: string): Promise<void> {
 		let parentDir = dirname(filePath);
 		const repoRoot = this.findSvnWorkingCopy(filePath);
 
@@ -225,8 +238,7 @@ export class SVNClient {
 			}
 			if (stdout) {
 				console.log(`[SVN Client] ${fullPath} added successfully: ${stdout}`);
-			}
-		} catch (error) {
+			}		} catch (error) {
 			console.error(`[SVN Client] Exception in add for ${fullPath}: ${error}`);
 			// Check if the error is because the file is already versioned
 			if (error.message && error.message.includes("is already under version control")) {
@@ -235,6 +247,9 @@ export class SVNClient {
 				throw error; // Re-throw other errors
 			}
 		}
+		
+		// Clear cache after add operation to ensure fresh status data
+		this.clearStatusCache();
 	}
 
 	async revertFile(filePath: string): Promise<void> {
@@ -245,13 +260,41 @@ export class SVNClient {
 			if (!workingCopyRoot) {
 				throw new Error('File is not in an SVN working copy');
 			}
-			
-			const command = `${this.svnPath} revert "${absolutePath}"`;
+					const command = `${this.svnPath} revert "${absolutePath}"`;
 			await execPromise(command, { cwd: workingCopyRoot });
 		} catch (error) {
 			throw new Error(`Failed to revert file: ${error.message}`);
 		}
-	}    async getStatus(path?: string): Promise<SvnStatus[]> {
+		
+		// Clear cache after revert operation to ensure fresh status data
+		this.clearStatusCache();
+	}
+	
+	async getStatus(path?: string): Promise<SvnStatus[]> {
+		// Create cache key for request deduplication
+		const cacheKey = path || '__vault_root__';
+		
+		// If we already have a pending request for this path, return the existing promise
+		if (this.statusRequestCache.has(cacheKey)) {
+			console.log('[SVN Client] Reusing existing getStatus request for:', cacheKey);
+			return this.statusRequestCache.get(cacheKey)!;
+		}
+		
+		// Create new request
+		const statusPromise = this.doGetStatus(path);
+		
+		// Cache the promise
+		this.statusRequestCache.set(cacheKey, statusPromise);
+		
+		// Clean up cache when request completes (success or failure)
+		statusPromise.finally(() => {
+			this.statusRequestCache.delete(cacheKey);
+		});
+		
+		return statusPromise;
+	}
+	
+	private async doGetStatus(path?: string): Promise<SvnStatus[]> {
 		try {
 			let workingCopyRoot: string | null;
 			let targetPath: string;
@@ -340,9 +383,16 @@ export class SVNClient {
 	}
 
 	async addFile(filePath: string): Promise<void> {
+		console.log('[SVN Client] addFile called:', { filePath });
 		try {
 			const absolutePath = this.resolveAbsolutePath(filePath);
 			const workingCopyRoot = this.findSvnWorkingCopy(absolutePath);
+			
+			console.log('[SVN Client] addFile paths resolved:', { 
+				filePath, 
+				absolutePath, 
+				workingCopyRoot 
+			});
 			
 			if (!workingCopyRoot) {
 				throw new Error('File is not in an SVN working copy');
@@ -353,10 +403,21 @@ export class SVNClient {
 			
 			// Now add the file itself
 			const command = `${this.svnPath} add "${absolutePath}"`;
-			await execPromise(command, { cwd: workingCopyRoot });
+			console.log('[SVN Client] Executing add command:', { command, cwd: workingCopyRoot });
+			
+			const result = await execPromise(command, { cwd: workingCopyRoot });
+			console.log('[SVN Client] Add command result:', { 
+				stdout: result.stdout, 
+				stderr: result.stderr 
+			});
 		} catch (error) {
+			console.error('[SVN Client] addFile failed:', error);
 			throw new Error(`Failed to add file to SVN: ${error.message}`);
 		}
+		
+		// Clear cache after addFile operation to ensure fresh status data
+		console.log('[SVN Client] Clearing status cache after add operation');
+		this.clearStatusCache();
 	}
 
 	async removeFile(filePath: string): Promise<void> {
@@ -366,14 +427,15 @@ export class SVNClient {
 			
 			if (!workingCopyRoot) {
 				throw new Error('File is not in an SVN working copy');
-			}
-
-			// Remove the file from SVN tracking (keeps local copy)
+			}			// Remove the file from SVN tracking (keeps local copy)
 			const command = `${this.svnPath} remove --keep-local "${absolutePath}"`;
 			await execPromise(command, { cwd: workingCopyRoot });
 		} catch (error) {
 			throw new Error(`Failed to remove file from SVN: ${error.message}`);
 		}
+		
+		// Clear cache after remove operation to ensure fresh status data
+		this.clearStatusCache();
 	}
 
 	private async addParentDirectories(absolutePath: string, workingCopyRoot: string): Promise<void> {
@@ -413,22 +475,31 @@ export class SVNClient {
 			}
 		}
 	}
-
-	async isFileInSvn(filePath: string): Promise<boolean> {
+		async isFileInSvn(filePath: string): Promise<boolean> {
 		try {
 			const absolutePath = this.resolveAbsolutePath(filePath);
 			const workingCopyRoot = this.findSvnWorkingCopy(absolutePath);
 			
 			if (!workingCopyRoot) {
+				console.log('[SVN Client] isFileInSvn: No working copy found for:', filePath);
 				return false;
 			}
 
-			const { stdout } = await execPromise(`"${this.svnPath}" status "${absolutePath}"`, {
-				cwd: workingCopyRoot
-			});
-
-			return !stdout.includes('?');
+			// Use svn info directly to definitively check if file is tracked by SVN
+			// This avoids cache coherency issues and provides the most accurate result
+			try {
+				const infoCommand = `${this.svnPath} info "${absolutePath}"`;
+				await execPromise(infoCommand, { cwd: workingCopyRoot });
+				// If svn info succeeds, file is definitely versioned
+				console.log('[SVN Client] isFileInSvn: svn info succeeded - file is versioned:', filePath);
+				return true;
+			} catch (infoError) {
+				// If svn info fails, file is not versioned
+				console.log('[SVN Client] isFileInSvn: svn info failed - file is unversioned:', filePath, infoError.message);
+				return false;
+			}
 		} catch (error) {
+			console.log('[SVN Client] isFileInSvn: Error occurred:', { filePath, error: error.message });
 			return false;
 		}
 	}
@@ -676,7 +747,9 @@ export class SVNClient {
 			status: line.charAt(0),
 			filePath: line.substring(8).trim()
 		}));
-	}    async createRepository(repoName: string): Promise<void> {
+	}
+	
+	async createRepository(repoName: string): Promise<void> {
 		try {
 			if (!this.vaultPath) {
 				throw new Error('Vault path not set');
@@ -693,7 +766,9 @@ export class SVNClient {
 			console.log(`SVN repository created at: ${repoPath}`);		} catch (error) {
 			throw new Error(`Failed to create SVN repository: ${error.message}`);
 		}
-	}	/**
+	}
+	
+	/**
 	 * Compare two file paths for equality, handling different path separators and relative/absolute paths
 	 */
 	comparePaths(path1: string, path2: string): boolean {
@@ -713,6 +788,7 @@ export class SVNClient {
 		console.log(`[SVN] comparePaths: No direct match - FALSE`);
 		return false;
 	}
+	
 	/**
 	 * Check if a directory is committed to the repository (not just added)
 	 */
@@ -760,24 +836,41 @@ export class SVNClient {
 				throw new Error(`File ${filePath} is not in an SVN working copy`);
 			}
 
-			// Check if the file is already versioned or needs to be added
-			const status = await this.getStatus(filePath);
-			const fileStatus = status.find(s => this.comparePaths(s.filePath, filePath));
+			// Use isFileInSvn to definitively check if file is versioned
+			const isVersioned = await this.isFileInSvn(filePath);
 			
-			if (!fileStatus || fileStatus.status === '?') {
+			if (!isVersioned) {
 				// File is unversioned, add it
 				console.log(`[SVN Client] File ${filePath} is not versioned. Adding it.`);
 				await this.add(filePath, false);
-			} else if (fileStatus.status === 'A') {
-				// File is already added
-				console.log(`[SVN Client] File ${filePath} is already added to SVN.`);
 			} else {
-				// File is already versioned
-				console.log(`[SVN Client] File ${filePath} is already versioned (status: ${fileStatus.status}).`);
+				// File is already versioned, check its current status
+				const status = await this.getStatus(filePath);
+				const fileStatus = status.find(s => this.comparePaths(s.filePath, filePath));
+				
+				if (fileStatus && fileStatus.status === 'A') {
+					console.log(`[SVN Client] File ${filePath} is already added to SVN.`);
+				} else {
+					console.log(`[SVN Client] File ${filePath} is already versioned.`);
+				}
 			}
 		} catch (error) {
 			console.error(`[SVN Client] Error ensuring file is added: ${error.message}`);
 			throw new Error(`Failed to ensure file is added to SVN: ${error.message}`);
+		}
+	}
+
+	/**
+	 * Clear the status request cache to ensure fresh data after SVN operations
+	 */
+	private clearStatusCache(): void {
+		console.log('[SVN Client] Clearing status request cache');
+		this.statusRequestCache.clear();
+		
+		// Notify DataStore to clear its cache as well
+		if (this.cacheInvalidationCallback) {
+			console.log('[SVN Client] Notifying DataStore to clear cache');
+			this.cacheInvalidationCallback();
 		}
 	}
 }

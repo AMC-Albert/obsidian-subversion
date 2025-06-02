@@ -30,9 +30,11 @@ export class SVNViewStatusManager {
 		this.stateManager = stateManager;
 		this.fileStateRenderer = fileStateRenderer;
 	}
+
 	/**
 	 * Update status display section only
-	 */	async updateStatusDisplay(state: UIState, statusContainer: HTMLElement | null, currentFile: TFile | null): Promise<void> {
+	 */
+	async updateStatusDisplay(state: UIState, statusContainer: HTMLElement | null, currentFile: TFile | null): Promise<void> {
 		if (!statusContainer) return;
 		
 		// Prevent duplicate renders - if already rendering, skip
@@ -57,28 +59,33 @@ export class SVNViewStatusManager {
 			
 			// Preserve existing status during loading states to avoid flicker
 			if (state.showLoading && this.stateManager.getLastStatusHash() && this.stateManager.getLastStatusHash() !== 'no-data') {
+				// Don't rebuild during loading if we already have content
 				return;
 			}
 			
 			// Calculate status hash to avoid unnecessary rebuilds
 			const currentStatusHash = this.stateManager.calculateStatusHash(state, currentFile?.path);
 			if (currentStatusHash === this.stateManager.getLastStatusHash()) {
+				console.log('[SVN ViewStatusManager] Status hash unchanged, skipping render');
 				return;
 			}
-					statusContainer.empty();
-			if (state.data && !state.showLoading) {
+			
+			statusContainer.empty();
+			
+			if (state.showLoading) {
+				// During loading, show a simple loading message instead of trying to render status
+				const loadingEl = statusContainer.createEl('span', { 
+					text: 'Loading SVN data...', 
+					cls: 'svn-status-loading' 
+				});
+			} else if (state.data && !state.showLoading) {
 				// Always use renderStatusWithData when we have state data - it handles routing correctly
 				this.renderStatusWithData(statusContainer, state.data, currentFile);
 			} else if (currentFile && !state.showLoading) {
 				// Only fall back to direct SVNStatusDisplay when we have no state data AND not loading
+				// But never during loading state to prevent infinite loops
 				console.log('[SVN ViewStatusManager] No state data available, falling back to direct SVNStatusDisplay');
-				this.statusDisplay.render(statusContainer, currentFile);
-			} else if (state.showLoading) {
-				// During loading, show a simple loading message instead of trying to render status
-				const loadingEl = statusContainer.createEl('span', { 
-					text: 'Loading...', 
-					cls: 'svn-status-loading' 
-				});
+				await this.statusDisplay.render(statusContainer, currentFile);
 			}
 			
 			// Only update the hash if we're not in a loading state
@@ -89,6 +96,7 @@ export class SVNViewStatusManager {
 			this.isRendering = false;
 		}
 	}
+
 	/**
 	 * Render status display with loaded data
 	 */
@@ -100,12 +108,21 @@ export class SVNViewStatusManager {
 			const statusTextEl = container.createEl('span', { cls: 'svn-status-text' });
 			this.statusDisplay.createStatusWithIcon(statusTextEl, SVNConstants.ICONS.NOT_IN_WORKING_COPY, SVNConstants.MESSAGES.NOT_IN_WORKING_COPY, SVNConstants.CSS_CLASSES.WARNING);
 			return;
-		}
-		if (currentFile) {
+		}		if (currentFile) {
 			console.log('[SVN ViewStatusManager] renderStatusWithData: Looking for file in status data:', {
 				currentFilePath: currentFile.path,
+				isFileInSvn: data.isFileInSvn,
 				statusEntries: data.status?.map(item => ({ filePath: item.filePath, status: item.status })) || []
 			});
+
+			// PRIORITY CHECK: If file is explicitly marked as not in SVN, show unversioned UI immediately
+			if (data.isFileInSvn === false) {
+				console.log('[SVN ViewStatusManager] renderStatusWithData: File marked as not in SVN (isFileInSvn=false), showing unversioned status.');
+				container.empty();
+				const statusTextEl = container.createEl('span', { cls: 'svn-status-text' });
+				this.statusDisplay.createStatusWithIcon(statusTextEl, SVNConstants.ICONS.UNVERSIONED, 'Unversioned', SVNConstants.CSS_CLASSES.UNVERSIONED);
+				return;
+			}
 
 			const fileStatusEntry = data.status?.find(item => {
 				const match = this.svnClient.comparePaths(item.filePath, currentFile.path);
@@ -116,21 +133,43 @@ export class SVNViewStatusManager {
 				});
 				return match;
 			});
+			console.log('[SVN ViewStatusManager] File status entry found:', fileStatusEntry);
 
-			console.log('[SVN ViewStatusManager] File status entry found:', fileStatusEntry);			if (fileStatusEntry && fileStatusEntry.status === '?') {
+			if (fileStatusEntry && fileStatusEntry.status === '?') {
 				// Unversioned file: show simple status message
 				console.log('[SVN ViewStatusManager] renderStatusWithData: Unversioned file status found in data, showing status message.');
 				container.empty();
 				const statusTextEl = container.createEl('span', { cls: 'svn-status-text' });
 				this.statusDisplay.createStatusWithIcon(statusTextEl, SVNConstants.ICONS.UNVERSIONED, 'Unversioned', SVNConstants.CSS_CLASSES.UNVERSIONED);
 				return;
-			} else {
-				// Versioned file (M, A, D, clean), or file not in status list (implies clean if other statuses exist)
-				// Delegate to SVNStatusDisplay to render revision and status.
-				// SVNStatusDisplay.render itself will handle emptying the container and also has a '?' check.
-				console.log('[SVN ViewStatusManager] renderStatusWithData: Versioned or clean file, delegating to SVNStatusDisplay.');
+			} else if (fileStatusEntry) {
+				// Versioned file with status (M, A, D, etc.) - delegate to SVNStatusDisplay
+				console.log('[SVN ViewStatusManager] renderStatusWithData: Versioned file with status, delegating to SVNStatusDisplay.');
 				this.statusDisplay.render(container, currentFile);
-				return;
+				return;			} else {
+				// File not found in status data - could be clean/unmodified versioned file
+				// Check if the file is actually versioned first
+				if (data.isFileInSvn === true) {
+					// File is versioned but has no status entry - it's clean/committed
+					console.log('[SVN ViewStatusManager] renderStatusWithData: File is versioned but clean (no status entry), showing up-to-date status.');
+					container.empty();
+					const statusTextEl = container.createEl('span', { cls: 'svn-status-text' });
+					this.statusDisplay.createStatusWithIcon(statusTextEl, SVNConstants.ICONS.UP_TO_DATE, SVNConstants.MESSAGES.UP_TO_DATE, SVNConstants.CSS_CLASSES.UP_TO_DATE);
+					return;
+				}
+				
+				// Check if there are any status entries at all to determine if we're in a working copy with data
+				if (data.status && data.status.length > 0) {
+					// We have status data but this file isn't in it - likely a clean versioned file
+					console.log('[SVN ViewStatusManager] renderStatusWithData: Clean versioned file (not in status list), delegating to SVNStatusDisplay.');
+					this.statusDisplay.render(container, currentFile);
+					return;
+				} else {
+					// No status data at all - might be unversioned or error state
+					console.log('[SVN ViewStatusManager] renderStatusWithData: No status data available, checking if file is versioned.');
+					this.statusDisplay.render(container, currentFile);
+					return;
+				}
 			}
 		} else {
 			// No current file selected, but it's a working copy.
@@ -155,7 +194,8 @@ export class SVNViewStatusManager {
 		
 		console.log('[SVN ViewStatusManager] Performing direct status update for:', currentFile.path);
 		
-		try {            // Get fresh status data directly without retry logic
+		try {
+			// Get fresh status data directly without retry logic
 			const statusResult = await this.svnClient.getStatus(currentFile.path);
 			const infoResult = await this.svnClient.getInfo(currentFile.path);
 			

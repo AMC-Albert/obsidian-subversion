@@ -5,12 +5,33 @@ import { SVNConstants } from '../../utils/SVNConstants';
 
 export class SVNStatusDisplay {
 	private svnClient: SVNClient;
+	private isRendering: boolean = false;
+	private lastRenderPromise: Promise<void> | null = null;
 
 	constructor(svnClient: SVNClient) {
 		this.svnClient = svnClient;
 	}
-
 	async render(container: HTMLElement, currentFile: TFile | null): Promise<void> {
+		// Prevent multiple simultaneous renders for the same container
+		if (this.isRendering) {
+			console.log('[SVNStatusDisplay] Already rendering, reusing existing promise');
+			if (this.lastRenderPromise) {
+				return this.lastRenderPromise;
+			}
+		}
+		
+		this.isRendering = true;
+		this.lastRenderPromise = this.doRender(container, currentFile);
+		
+		try {
+			await this.lastRenderPromise;
+		} finally {
+			this.isRendering = false;
+			this.lastRenderPromise = null;
+		}
+	}
+	
+	private async doRender(container: HTMLElement, currentFile: TFile | null): Promise<void> {
 		container.empty();
 
 		// Prevent nested .svn-status-display divs
@@ -26,7 +47,7 @@ export class SVNStatusDisplay {
 		}
 
 		await this.renderStatusContent(statusEl, currentFile);
-	}    
+	}
 
 	private async renderStatusContent(statusEl: HTMLElement, currentFile: TFile): Promise<void> {
 		try {

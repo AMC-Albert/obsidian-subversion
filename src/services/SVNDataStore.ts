@@ -35,9 +35,16 @@ export class SVNDataStore {
 	private directStatusMap = new Map<string, SvnStatus[]>();
 	private lastRefreshTime = new Map<string, number>();
 	private refreshThrottleMs = 200; // Minimum time between refreshes for same file
-
+	// Track when cache was last cleared to invalidate cached data
+	private lastCacheClearTime = Date.now();
 	constructor(svnClient: SVNClient) {
 		this.svnClient = svnClient;
+		
+		// Register callback to clear DataStore cache when SVNClient cache is cleared
+		this.svnClient.setCacheInvalidationCallback(() => {
+			console.log('[SVN DataStore] Cache invalidation callback triggered from SVNClient');
+			this.forceClearCache();
+		});
 	}
 
 	/**
@@ -74,23 +81,54 @@ export class SVNDataStore {
 	async loadFileData(file: TFile, options: DataLoadOptions = {}): Promise<SVNFileData> {
 		const filePath = file.path;
 		
+		console.log('[SVN DataStore] loadFileData called:', {
+			filePath,
+			hasLoadingPromise: this.loadingPromises.has(filePath),
+			hasCachedData: this.dataCache.has(filePath)
+		});
+		
 		// If already loading, return existing promise
 		if (this.loadingPromises.has(filePath)) {
-			return this.loadingPromises.get(filePath)!;
-		}
-
+			console.log('[SVN DataStore] Returning existing loading promise for:', filePath);
+			return this.loadingPromises.get(filePath)!;		}
+		
+		// TEMPORARY: Disable cache completely to debug the issue
+		/*
 		// Check if we have recent cached data
 		const cached = this.dataCache.get(filePath);
-		if (cached && !cached.isLoading && (Date.now() - cached.lastUpdateTime) < 5000) {
-			return cached;
+		if (cached && !cached.isLoading && (Date.now() - cached.lastUpdateTime) < 2000) {
+			// Check if cache was cleared since this data was created
+			if (cached.lastUpdateTime > this.lastCacheClearTime) {
+				console.log('[SVN DataStore] Returning cached data:', {
+					filePath,
+					age: Date.now() - cached.lastUpdateTime,
+					isFileInSvn: cached.isFileInSvn,
+					isWorkingCopy: cached.isWorkingCopy,
+					cacheTime: cached.lastUpdateTime,
+					clearTime: this.lastCacheClearTime
+				});
+				return cached;
+			} else {
+				console.log('[SVN DataStore] Cached data invalidated by cache clear:', {
+					filePath,
+					dataTime: cached.lastUpdateTime,
+					clearTime: this.lastCacheClearTime
+				});
+			}
 		}
-
+		*/
 		// Create loading promise
+		console.log('[SVN DataStore] Creating new loading promise for:', filePath);
 		const loadingPromise = this.performDataLoad(file, options);
 		this.loadingPromises.set(filePath, loadingPromise);
 
 		try {
 			const data = await loadingPromise;
+			console.log('[SVN DataStore] Load completed for:', {
+				filePath,
+				isFileInSvn: data.isFileInSvn,
+				isWorkingCopy: data.isWorkingCopy
+			});
 			return data;
 		} finally {
 			this.loadingPromises.delete(filePath);
@@ -133,6 +171,17 @@ export class SVNDataStore {
 		this.dataCache.clear();
 		this.loadingPromises.clear();
 	}
+	/**
+	 * Force clear all cached data immediately (for use after SVN operations)
+	 */
+	forceClearCache(): void {
+		console.log('[SVN DataStore] Force clearing all cache data');
+		this.dataCache.clear();
+		this.loadingPromises.clear();
+		this.lastRefreshTime.clear();
+		this.directStatusMap.clear();
+		this.lastCacheClearTime = Date.now(); // Update clear timestamp
+	}
 
 	/**
 	 * Update SVN client reference
@@ -164,13 +213,18 @@ export class SVNDataStore {
 		// Cache loading state and notify subscribers
 		this.dataCache.set(filePath, loadingData);
 		this.notifySubscribers(filePath, loadingData);
-
 		try {
 			// Load data in parallel where possible
 			const [isWorkingCopy, isFileInSvn] = await Promise.all([
 				this.svnClient.isWorkingCopy(filePath),
 				this.svnClient.isFileInSvn(filePath).catch(() => false)
 			]);
+
+			console.log('[SVN DataStore] Core checks completed:', {
+				filePath,
+				isWorkingCopy,
+				isFileInSvn
+			});
 
 			// Early exit if not in working copy
 			if (!isWorkingCopy) {
@@ -183,7 +237,7 @@ export class SVNDataStore {
 				this.dataCache.set(filePath, finalData);
 				this.notifySubscribers(filePath, finalData);
 				return finalData;
-			}      			// Load additional data based on options
+			}// Load additional data based on options
 			// Use direct status override if available to prevent stale data
 			let statusPromise: Promise<SvnStatus[]>;
 			if (this.directStatusMap.has(filePath)) {
@@ -202,14 +256,28 @@ export class SVNDataStore {
 
 			const historyPromise = isFileInSvn && options.includeHistory !== false
 				? this.svnClient.getFileHistory(filePath).catch(() => [])
-				: Promise.resolve([]);
-
-			// Wait for all data to load
+				: Promise.resolve([]);			// Wait for all data to load
 			const [status, info, history] = await Promise.all([
 				statusPromise,
 				infoPromise,
 				historyPromise
 			]);
+
+			// IMPORTANT: Re-validate isFileInSvn based on actual status results
+			// If status is empty and there's no info, the file is definitely unversioned
+			let finalIsFileInSvn = isFileInSvn;
+			if (isFileInSvn && status.length === 0 && !info) {
+				console.log('[SVN DataStore] Re-evaluating isFileInSvn: empty status and no info suggests unversioned file');
+				// Double-check with a direct status call to be absolutely sure
+				try {
+					const recheck = await this.svnClient.isFileInSvn(filePath);
+					finalIsFileInSvn = recheck;
+					console.log('[SVN DataStore] Re-check result:', { filePath, originalCheck: isFileInSvn, recheckResult: recheck });
+				} catch (error) {
+					finalIsFileInSvn = false;
+					console.log('[SVN DataStore] Re-check failed, assuming unversioned:', error.message);
+				}
+			}
 
 			// Compute derived properties
 			const hasLocalChanges = status.some(s => s.status === 'M' || s.status === 'A' || s.status === 'D');
@@ -221,14 +289,14 @@ export class SVNDataStore {
 				isLoading: false,
 				error: null,
 				isWorkingCopy,
-				isFileInSvn,
+				isFileInSvn: finalIsFileInSvn,
 				status,
 				info,
 				history,
 				hasLocalChanges,
 				currentRevision,
 				lastUpdateTime: Date.now()
-			};			// Cache and notify
+			};// Cache and notify
 			console.log('[SVN DataStore] Final data loaded:', {
 				filePath: filePath,
 				isWorkingCopy: finalData.isWorkingCopy,

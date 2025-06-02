@@ -142,7 +142,6 @@ export class SVNView extends ItemView {
 			await this.uiController.setCurrentFile(activeFile);
 		}
 	}
-	
 	/**
 	 * Handle UI state changes - delegate to main renderer
 	 */
@@ -154,6 +153,12 @@ export class SVNView extends ItemView {
 			isLoading: state.data?.isLoading,
 			currentFile: this.currentFile?.path
 		});
+		
+		// Prevent overlapping state change handlers
+		if (!this.isInitialized) {
+			console.log('[SVN SVNView] View not initialized, skipping state change');
+			return;
+		}
 		
 		// Let the main renderer handle all UI updates first
 		await this.viewRenderer.handleUIStateChange(state, this.currentFile);

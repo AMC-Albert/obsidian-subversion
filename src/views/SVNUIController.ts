@@ -24,6 +24,8 @@ export class SVNUIController {
 	
 	private uiUpdateCallbacks = new Set<(state: UIState) => void>();
 	private unsubscribeDataStore: (() => void) | null = null;
+	private lastStateUpdateTime = 0;
+	private updateThrottleMs = 100; // Minimum time between UI updates
 	
 	constructor(plugin: ObsidianSvnPlugin, svnClient: SVNClient) {
 		this.plugin = plugin;
@@ -94,7 +96,6 @@ export class SVNUIController {
 				}
 			}, 200);
 		}
-
 		// Subscribe to data updates
 		this.unsubscribeDataStore = this.dataStore.subscribe(file.path, (data) => {
 			console.log('[SVN UIController] Data subscription callback triggered:', {
@@ -104,14 +105,34 @@ export class SVNUIController {
 				statusCount: data.status?.length || 0,
 				statusItems: data.status?.map(s => ({ path: s.filePath, status: s.status })) || []
 			});
+			
 			// Only update if this is still the current file
 			if (this.currentFile?.path === file.path) {
-				this.updateUIState({
+				// Check if the data has actually changed to prevent unnecessary updates
+				const newStateData = {
 					isLoading: data.isLoading,
 					showLoading: data.isLoading,
 					data: data,
 					error: data.error
-				});
+				};
+				
+				// Only update if something meaningful changed
+				const isLoadingChanged = this.uiState.isLoading !== newStateData.isLoading;
+				const showLoadingChanged = this.uiState.showLoading !== newStateData.showLoading;
+				const errorChanged = this.uiState.error !== newStateData.error;
+				const dataChanged = this.uiState.data !== newStateData.data;
+				
+				if (isLoadingChanged || showLoadingChanged || errorChanged || dataChanged) {
+					console.log('[SVN UIController] Updating UI state due to data changes:', {
+						isLoadingChanged,
+						showLoadingChanged,
+						errorChanged,
+						dataChanged
+					});
+					this.updateUIState(newStateData);
+				} else {
+					console.log('[SVN UIController] Skipping UI update, no meaningful changes detected');
+				}
 			}
 		});
 
@@ -212,10 +233,25 @@ export class SVNUIController {
 			this.unsubscribeDataStore();
 			this.unsubscribeDataStore = null;
 		}
-		this.uiUpdateCallbacks.clear();
-	}    private updateUIState(newState: Partial<UIState>): void {
+		this.uiUpdateCallbacks.clear();	}    private updateUIState(newState: Partial<UIState>): void {
+		const now = Date.now();
+		
+		// Throttle UI updates to prevent rapid-fire calls
+		if (now - this.lastStateUpdateTime < this.updateThrottleMs) {
+			// If we're throttling, schedule the update for later unless we're transitioning to/from loading
+			const isLoadingTransition = 
+				(newState.showLoading !== undefined && newState.showLoading !== this.uiState.showLoading) ||
+				(newState.isLoading !== undefined && newState.isLoading !== this.uiState.isLoading);
+			
+			if (!isLoadingTransition) {
+				console.log('[SVN UIController] Throttling UI update, too frequent');
+				return;
+			}
+		}
+		
 		const oldState = { ...this.uiState };
 		this.uiState = { ...this.uiState, ...newState };
+		this.lastStateUpdateTime = now;
 		
 		console.log('[SVN UIController] State update:', {
 			old: {

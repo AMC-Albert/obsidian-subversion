@@ -38,6 +38,9 @@ export class SVNViewRenderer {
 	private infoPanel: SVNInfoPanel;
 	private fileStateRenderer: SVNFileStateRenderer;
 	private repositoryHandler: SVNRepositoryHandler;
+	
+	// State handling protection
+	private isHandlingStateChange: boolean = false;
 
 	constructor(
 		plugin: ObsidianSvnPlugin,
@@ -82,46 +85,57 @@ export class SVNViewRenderer {
 	initializeLayout(): void {
 		this.layoutManager.initializeLayout();
 		this.layoutManager.setupInfoPanel(this.infoPanel, this.fileActions);
-	}
-	/**
+	}	/**
 	 * Handle UI state changes intelligently
 	 */
 	async handleUIStateChange(state: UIState, currentFile: TFile | null): Promise<void> {
-		// Check if we're in a user interaction protection window
-		if (this.stateManager.isInUserInteractionWindow()) {
-			console.log('[SVN ViewRenderer] Skipping UI update - user interaction in progress');
+		// Prevent overlapping state change handlers
+		if (this.isHandlingStateChange) {
+			console.log('[SVN ViewRenderer] Already handling state change, skipping duplicate');
 			return;
 		}
-		  // Override state data status with recent direct status if within protection window
-		if (this.stateManager.isWithinProtectionWindow() && state.data) {
-			const directData = this.stateManager.getLastDirectStatusData();
-			if (directData) {
-				state.data.status = directData.status as any;
-				state.data.hasLocalChanges = directData.status.some((s: any) => s.status === 'M' || s.status === 'A' || s.status === 'D');
-			}
-		}
 		
-		// If we have fresh direct status data, render override and skip state-driven UI updates
-		if (this.stateManager.isWithinProtectionWindow()) {
-			const statusContainer = this.layoutManager.getStatusContainer();
-			if (statusContainer && this.stateManager.getLastDirectStatusData()) {
-				this.statusManager.updateStatusDisplay(state, statusContainer, currentFile);
+		this.isHandlingStateChange = true;
+		
+		try {
+			// Check if we're in a user interaction protection window
+			if (this.stateManager.isInUserInteractionWindow()) {
+				console.log('[SVN ViewRenderer] Skipping UI update - user interaction in progress');
 				return;
 			}
-		}
-		
-		// Calculate state hash for intelligent updates
-		const currentDataHash = this.stateManager.calculateStateHash(state);
-		const currentFileId = currentFile?.path || null;
-		
-		// Only update if file changed or data significantly changed
-		const fileChanged = currentFileId !== this.stateManager.getLastFileId();
-		const dataChanged = currentDataHash !== this.stateManager.getLastDataHash();
-		
-		if (fileChanged || dataChanged) {
-			await this.updateViewIntelligently(state, fileChanged, dataChanged, currentFile);
-			this.stateManager.setLastDataHash(currentDataHash);
-			this.stateManager.setLastFileId(currentFileId);
+			  // Override state data status with recent direct status if within protection window
+			if (this.stateManager.isWithinProtectionWindow() && state.data) {
+				const directData = this.stateManager.getLastDirectStatusData();
+				if (directData) {
+					state.data.status = directData.status as any;
+					state.data.hasLocalChanges = directData.status.some((s: any) => s.status === 'M' || s.status === 'A' || s.status === 'D');
+				}
+			}
+			
+			// If we have fresh direct status data, render override and skip state-driven UI updates
+			if (this.stateManager.isWithinProtectionWindow()) {
+				const statusContainer = this.layoutManager.getStatusContainer();
+				if (statusContainer && this.stateManager.getLastDirectStatusData()) {
+					await this.statusManager.updateStatusDisplay(state, statusContainer, currentFile);
+					return;
+				}
+			}
+			
+			// Calculate state hash for intelligent updates
+			const currentDataHash = this.stateManager.calculateStateHash(state);
+			const currentFileId = currentFile?.path || null;
+			
+			// Only update if file changed or data significantly changed
+			const fileChanged = currentFileId !== this.stateManager.getLastFileId();
+			const dataChanged = currentDataHash !== this.stateManager.getLastDataHash();
+			
+			if (fileChanged || dataChanged) {
+				await this.updateViewIntelligently(state, fileChanged, dataChanged, currentFile);
+				this.stateManager.setLastDataHash(currentDataHash);
+				this.stateManager.setLastFileId(currentFileId);
+			}
+		} finally {
+			this.isHandlingStateChange = false;
 		}
 	}
 
@@ -148,7 +162,6 @@ export class SVNViewRenderer {
 			this.updateContentArea(state, currentFile);
 		}
 	}
-
 	/**
 	 * Update content area section only  
 	 */
@@ -160,31 +173,44 @@ export class SVNViewRenderer {
 		const contentType = this.stateManager.getContentType(state);
 		const historyChanged = contentType === 'history' && this.stateManager.hasHistoryChanged(state);
 		
-		// Radical anti-flicker approach: Never rebuild content area for loading states
-		// Keep existing content visible during brief loading operations
+		// Decide if we need to rebuild the content area
 		let shouldRebuild = false;
-		  if (state.showLoading) {
-			// Always show loading states to prevent the UI from appearing stuck
-			shouldRebuild = true;
+		
+		if (state.showLoading) {
+			// Only show loading if we don't already have content OR if the content type changed
+			const lastContentType = this.stateManager.getLastContentType();
+			if (!lastContentType || lastContentType === 'empty' || lastContentType !== 'loading') {
+				shouldRebuild = true;
+			}
 		} else {
 			// We're not in loading state - this is real content
-			if (this.stateManager.getLastContentType() === 'loading') {
+			const lastContentType = this.stateManager.getLastContentType();
+			if (lastContentType === 'loading' || lastContentType === 'empty') {
+				// Always rebuild when transitioning from loading/empty to content
 				shouldRebuild = true;
-			} else if (contentType !== this.stateManager.getLastContentType()) {
+			} else if (contentType !== lastContentType) {
+				// Content type changed
 				shouldRebuild = true;
 			} else if (contentType === 'history' && historyChanged) {
+				// History content changed
 				shouldRebuild = true;
 			}
 		}
 		
 		// Only rebuild if necessary
 		if (shouldRebuild) {
+			console.log('[SVN ViewRenderer] Rebuilding content area:', {
+				contentType,
+				lastContentType: this.stateManager.getLastContentType(),
+				showLoading: state.showLoading,
+				shouldRebuild
+			});
 			this.layoutManager.clearContentArea();
 			this.historyManager.renderHistoryContentWithState(contentArea, state, currentFile);
 		}
 		  // Update content type tracking
 		this.stateManager.setLastContentType(contentType);
-	}    /**
+	}/**
 	 * Show repository setup UI
 	 */
 	showRepositorySetup(currentFile: TFile | null): void {

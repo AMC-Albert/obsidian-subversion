@@ -166,7 +166,6 @@ export class SVNViewStateManager {
 		}
 		return changed;
 	}
-
 	/**
 	 * Determine the type of content being displayed
 	 */
@@ -177,12 +176,12 @@ export class SVNViewStateManager {
 		
 		const data = state.data;
 		if (!data.isWorkingCopy) return 'repository-setup';
-		if (!data.isFileInSvn) return 'not-in-svn';
+		if (!data.isFileInSvn && data.status?.length === 0) return 'not-in-svn';
 		
-		const isAddedNotCommitted = data.status.some((s: any) => s.status === 'A');
+		const isAddedNotCommitted = data.status?.some((s: any) => s.status === 'A');
 		if (isAddedNotCommitted) return 'added-not-committed';
 		
-		if (data.history.length === 0) return 'no-history';
+		if (!data.history || data.history.length === 0) return 'no-history';
 		return 'history';
 	}
 
