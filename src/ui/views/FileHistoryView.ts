@@ -210,81 +210,9 @@ export class FileHistoryView extends ItemView {
             this.toolbarContainer.empty();
             this.toolbar.render(this.toolbarContainer, this.currentFile);
         }
-    }    /**
-     * Update status display section only
-     */
-    private async updateStatusDisplay(state: UIState): Promise<void> {
-        if (!this.statusContainer) return;
-        // If we have fresh direct status data, override and render immediately
-        // If we have fresh direct status data, render override and skip state-driven UI updates
-        const protectionWindowMs = FileHistoryView.PROTECTION_WINDOW_MS;
-        if (this.lastDirectStatusData && Date.now() - this.lastDirectStatusUpdateTime < protectionWindowMs) {
-            this.statusContainer.empty();
-            this.renderStatusWithData(this.statusContainer, this.lastDirectStatusData as any);
-            return;
-        }
-        // Preserve existing status during loading states to avoid flicker
-        if (state.showLoading && this.lastStatusHash && this.lastStatusHash !== 'no-data') {
-            return;
-        }
-        
-        // Calculate status hash to avoid unnecessary rebuilds
-        const currentStatusHash = this.calculateStatusHash(state);
-        if (currentStatusHash === this.lastStatusHash) {
-            return; // Status hasn't changed, no need to rebuild
-        }
-        this.statusContainer.empty();
-        if (state.data && !state.showLoading) {
-            this.renderStatusWithData(this.statusContainer, state.data);
-        } else if (this.currentFile) {
-            this.statusDisplay.render(this.statusContainer, this.currentFile);
-        }
-        // Only update the hash if we're not in a loading state (to preserve it for the check above)
-        if (!state.showLoading) {
-            this.lastStatusHash = currentStatusHash;
-        }
-    }/**
-     * Calculate hash for status display to detect changes
-     */
-    private calculateStatusHash(state: UIState): string {
-        // During loading states, return a stable hash to avoid rebuilds
-        if (state.showLoading) {
-            return `loading-${this.currentFile?.path || 'no-file'}`;
-        }
-        
-        if (!state.data) return 'no-data';
-        
-        // Find the current file's specific status
-        const currentFileStatus = state.data.status.find(item => 
-            item.filePath.includes(this.currentFile?.name || '') || 
-            item.filePath.endsWith(this.currentFile?.path || '')
-        );
-        
-        const statusData = {
-            isWorkingCopy: state.data.isWorkingCopy,
-            revision: state.data.info?.revision,
-            author: state.data.info?.lastChangedAuthor,
-            date: state.data.info?.lastChangedDate,
-            // Include file path to make hash more specific
-            filePath: this.currentFile?.path,
-            // Include the complete status information
-            fileStatus: currentFileStatus?.status,
-            fileStatusPath: currentFileStatus?.filePath,
-            // Include total count and summary for better change detection
-            totalStatusItems: state.data.status.length,
-            hasModifications: state.data.status.some((item: any) => {
-                return item.status && typeof item.status === 'string' && (
-                    item.status.includes('M') || 
-                    item.status.includes('A') || 
-                    item.status.includes('D')
-                );
-            }),
-            // Add a timestamp factor to ensure freshness when direct updates occur
-            timeSinceDirectUpdate: Date.now() - this.lastDirectStatusUpdateTime
-        };
-        
-        return JSON.stringify(statusData);
-    }/**
+    }
+    
+    /**
      * Update content area section only  
      */    private updateContentArea(state: UIState): void {
         if (!this.contentArea) return;
@@ -374,14 +302,6 @@ export class FileHistoryView extends ItemView {
             this.lastHistoryHash = currentHistoryHash;
         }
         return changed;
-    }
-    
-    /**
-     * Legacy method - now replaced by intelligent updates
-     */
-    private renderViewWithState(state: UIState): void {
-        // This method is now deprecated in favor of intelligent updates
-        this.updateViewIntelligently(state, true, true);
     }
     
     private renderStatusWithData(container: HTMLElement, data: SVNFileData): void {
@@ -806,7 +726,9 @@ export class FileHistoryView extends ItemView {
     // Reset to working copy revision (null means working copy)
     resetToWorkingCopy(): void {
         this.currentViewedRevision = null;
-    }    /**
+    }
+    
+    /**
      * Lightweight status-only update for file modifications
      * This bypasses the full data loading and cache to provide immediate status updates
      * Uses retry logic only when there's evidence of potential reversion
@@ -833,20 +755,8 @@ export class FileHistoryView extends ItemView {
                 this.statusDisplay.render(this.statusContainer, this.currentFile);
             }
         }
-    }/**
-     * Get status data with smart retry logic to handle file reversions
-     * Only retries when there's evidence of potential reversion (status changed recently)
-     */
-    private async getStatusDataWithRetry(maxRetries: number = 3): Promise<any> {
-        // Removed: retry logic for status updates (obsolete with correct whitespace handling)
-        return undefined;
-    }    /**
-     * Check if file appears modified based on status data
-     */
-    private async isFileModifiedFromStatus(statusData: any): Promise<boolean> {
-        // Removed: isFileModifiedFromStatus logic (obsolete with correct whitespace handling)
-        return false;
-    }    /**
+    }
+    /**
      * Calculate status hash from raw data (for direct status updates)
      */
     private calculateStatusHashFromData(data: { isWorkingCopy: boolean, status: any[], info: any }): string {
@@ -1045,27 +955,5 @@ export class FileHistoryView extends ItemView {
             result
         });
           return result;
-    }    /**
-     * Update the data store with fresh status data to prevent stale data issues
-     */
-    private async updateDataStoreWithFreshData(statusData: any): Promise<void> {
-        if (!this.currentFile) return;
-        
-        console.log('[SVN FileHistoryView] Clearing data store cache to force fresh data load');
-        
-        try {
-            // Access the data store through the UI controller
-            const dataStore = (this.uiController as any).dataStore;
-            if (dataStore && typeof dataStore.clearCache === 'function') {
-                // Clear the entire cache to force fresh data
-                dataStore.clearCache();
-                console.log('[SVN FileHistoryView] Data store cache cleared successfully');
-            } else {
-                console.warn('[SVN FileHistoryView] Could not access data store for cache clearing');
-            }
-        } catch (error) {
-            console.error('[SVN FileHistoryView] Error clearing data store cache:', error);
-            throw error;
-        }
     }
 }
