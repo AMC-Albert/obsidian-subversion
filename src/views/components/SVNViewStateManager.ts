@@ -11,8 +11,11 @@ export class SVNViewStateManager {
     private lastStatusHash: string | null = null;
     private lastContentType: string | null = null;
     private lastHistoryHash: string | null = null;
-    private lastDirectStatusUpdateTime = 0;
-    private lastDirectStatusData: { isWorkingCopy: boolean; status: any[]; info: any | null } | null = null;
+    private lastDirectStatusUpdateTime = 0;    private lastDirectStatusData: { isWorkingCopy: boolean; status: any[]; info: any | null } | null = null;
+    
+    // User interaction protection (prevent DOM rebuilding during clicks)
+    private userInteractionWindow = 0;
+    private static readonly USER_INTERACTION_WINDOW_MS = 1000; // 1 second protection
     
     // Centralized protection window constant
     private static readonly PROTECTION_WINDOW_MS = 5000;
@@ -209,13 +212,23 @@ export class SVNViewStateManager {
         return this.lastDirectStatusData;
     }    isWithinProtectionWindow(): boolean {
         return !!(this.lastDirectStatusData && Date.now() - this.lastDirectStatusUpdateTime < SVNViewStateManager.PROTECTION_WINDOW_MS);
-    }
-
-    getProtectionWindowMs(): number {
+    }    getProtectionWindowMs(): number {
         return SVNViewStateManager.PROTECTION_WINDOW_MS;
     }
 
     /**
+     * Mark the start of a user interaction to prevent DOM rebuilding
+     */
+    startUserInteraction(): void {
+        this.userInteractionWindow = Date.now();
+    }
+
+    /**
+     * Check if we're within the user interaction protection window
+     */
+    isInUserInteractionWindow(): boolean {
+        return Date.now() - this.userInteractionWindow < SVNViewStateManager.USER_INTERACTION_WINDOW_MS;
+    }    /**
      * Reset all state tracking for clean slate
      */
     resetStateTracking(): void {
@@ -226,5 +239,6 @@ export class SVNViewStateManager {
         this.lastHistoryHash = null;
         this.lastDirectStatusUpdateTime = 0;
         this.lastDirectStatusData = null;
+        this.userInteractionWindow = 0;
     }
 }

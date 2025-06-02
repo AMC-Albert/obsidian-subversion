@@ -14,6 +14,7 @@ export default class ObsidianSvnPlugin extends Plugin {
     settings: SvnPluginSettings;
     svnClient: SVNClient;
     private statusUpdateTimer: number | null = null;
+    private lastActiveFile: string | null = null;
 
     async onload() {
         console.log(`Loading ${PLUGIN_CONSTANTS.PLUGIN_NAME} plugin`);
@@ -84,7 +85,9 @@ export default class ObsidianSvnPlugin extends Plugin {
                 this.activateView();
             }
         });
-    }    /**
+    }
+    
+    /**
      * Setup optional features based on settings
      */
     private setupFeatures() {
@@ -140,14 +143,21 @@ export default class ObsidianSvnPlugin extends Plugin {
      */
     async loadSettings() {
         this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
-    }    /**
+    }
+    
+    /**
      * Save plugin settings
      */
     async saveSettings() {
         await this.saveData(this.settings);
         
-        // Update SVN client path when settings change
+        // Update SVN client path when settings change (but don't auto-refresh views)
         this.updateSvnClient();
+        
+        // Notify views that settings have changed (with a small delay to ensure debounced saves complete)
+        setTimeout(() => {
+            this.notifyViewsOfSettingsChange();
+        }, 100);
     }
 
     /**
@@ -160,16 +170,44 @@ export default class ObsidianSvnPlugin extends Plugin {
         const adapter = this.app.vault.adapter;
         if (adapter instanceof FileSystemAdapter) {
             this.svnClient.setVaultPath(adapter.getBasePath());
-        }        // Refresh file history views with the new client
-        this.refreshFileHistoryViews();
-    }    /**
+        }
+        
+        // Don't automatically refresh views here - let user manually refresh if needed
+        // Automatic refresh on every settings keystroke creates race conditions
+        console.log('[SVN Plugin] SVN client updated, views will refresh on next user action');
+    }
+
+    /**
+     * Notify views that settings have changed
+     */
+    private notifyViewsOfSettingsChange() {
+        console.log('[SVN Plugin] Notifying views of settings change');
+        let notifiedCount = 0;
+        this.app.workspace.iterateAllLeaves(leaf => {
+            if (leaf.view instanceof FileHistoryView) {
+                // Call a method on the view to handle settings change
+                if (typeof (leaf.view as any).onSettingsChanged === 'function') {
+                    (leaf.view as any).onSettingsChanged();
+                    notifiedCount++;
+                }
+            }
+        });
+        console.log(`Notified ${notifiedCount} file history views of settings change`);
+    }
+
+    /**
      * Setup file change monitoring for status updates
      */
     private setupFileChangeMonitoring() {
-        // Update status when switching files (full refresh needed for new file)
+        // Update status when switching files (with smart refresh)
         this.registerEvent(
             this.app.workspace.on('active-leaf-change', () => {
-                this.refreshFileHistoryViews(); // Full refresh when switching files
+                // Only refresh if the active file has actually changed
+                const activeFile = this.app.workspace.getActiveFile();
+                if (activeFile && this.lastActiveFile !== activeFile?.path) {
+                    this.lastActiveFile = activeFile.path;
+                    this.refreshFileHistoryViews();
+                }
             })
         );
         
@@ -200,7 +238,9 @@ export default class ObsidianSvnPlugin extends Plugin {
                 this.handleFileChange(file);
             })
         );
-    }    /**
+    }
+    
+    /**
      * Handle file changes for status updates
      */
     private handleFileChange(file: TFile) {
@@ -208,7 +248,9 @@ export default class ObsidianSvnPlugin extends Plugin {
         if (activeFile && file.path === activeFile.path) {
             this.scheduleStatusRefresh();
         }
-    }    /**
+    }
+    
+    /**
      * Schedule a status refresh with delay
      */
     private scheduleStatusRefresh() {
@@ -225,7 +267,8 @@ export default class ObsidianSvnPlugin extends Plugin {
      * Setup auto-commit functionality
      */
     private setupAutoCommit() {
-        this.registerEvent(            this.app.vault.on('modify', async (file: TFile) => {
+        this.registerEvent(
+            this.app.vault.on('modify', async (file: TFile) => {
                 if (!this.settings.autoCommit) return;
 
                 try {
@@ -245,11 +288,23 @@ export default class ObsidianSvnPlugin extends Plugin {
             })
         );
     }
-
+    
     /**
-     * Refresh all open file history views
+     * Refresh all open file history views (with throttling to prevent spam)
      */
+    private lastRefreshTime = 0;
+    private static readonly REFRESH_THROTTLE_MS = 1000; // 1 second throttle
+    
     refreshFileHistoryViews() {
+        const now = Date.now();
+        if (now - this.lastRefreshTime < ObsidianSvnPlugin.REFRESH_THROTTLE_MS) {
+            console.log(`[SVN Plugin] Throttling refreshFileHistoryViews - last refresh ${now - this.lastRefreshTime}ms ago`);
+            return;
+        }
+        
+        console.log('[SVN Plugin] refreshFileHistoryViews called');
+        this.lastRefreshTime = now;
+        
         let refreshedCount = 0;
         this.app.workspace.iterateAllLeaves(leaf => {
             if (leaf.view instanceof FileHistoryView) {

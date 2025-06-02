@@ -56,7 +56,7 @@ export class SVNView extends ItemView {
         this.historyRenderer = new SVNHistoryRenderer(this.svnClient, plugin, () => this.refreshData());
         this.infoPanel = new SVNInfoPanel(plugin, this.svnClient);
         this.fileStateRenderer = new SVNFileStateRenderer(plugin, this.svnClient, () => this.refreshData());
-        this.repositoryHandler = new SVNRepositoryHandler(plugin, this.svnClient, () => this.refreshData());
+        this.repositoryHandler = new SVNRepositoryHandler(plugin, this.svnClient, () => this.refreshData(), () => this.markUserInteraction());
     }
 
     getViewType(): string {
@@ -69,7 +69,9 @@ export class SVNView extends ItemView {
 
     getIcon(): string {
         return PLUGIN_CONSTANTS.ICON_ID;
-    }    async onOpen() {
+    }
+
+    async onOpen() {
         // Initialize the view
         this.initializeView();
         
@@ -139,7 +141,8 @@ export class SVNView extends ItemView {
             this.currentFile = activeFile;
             await this.uiController.setCurrentFile(activeFile);
         }
-    }    /**
+    }
+      /**
      * Handle UI state changes - delegate to main renderer
      */
     private async handleUIStateChange(state: UIState): Promise<void> {
@@ -151,20 +154,64 @@ export class SVNView extends ItemView {
             currentFile: this.currentFile?.path
         });
         
-        // Let the main renderer handle all UI updates
+        // Let the main renderer handle all UI updates first
         await this.viewRenderer.handleUIStateChange(state, this.currentFile);
+        
+        // Check if we're showing repository setup after rendering
+        const isShowingSetup = this.isShowingRepositorySetup();
+        console.log('[SVN SVNView] Setup mode detected:', isShowingSetup);
+        
+        // Enable/disable toolbar based on whether we're showing setup
+        this.toolbar.setEnabled(!isShowingSetup);
     }
-
     /**
-     * Show repository setup UI
+     * Show repository setup and disable toolbar
      */
-    private showRepositorySetup(): void {
-        if (!this.currentFile) return;
+    showRepositorySetup(): void {
+        console.log('[SVN SVNView] Showing repository setup');
+        this.markUserInteraction();
+        
+        // Disable toolbar during setup
+        this.toolbar.setEnabled(false);
+        
+        // Directly render repository setup through the view renderer
         this.viewRenderer.showRepositorySetup(this.currentFile);
     }
 
-    // === PUBLIC API METHODS (Expected by main.ts) ===
+    /**
+     * Handle settings changes from the main plugin
+     */
+    onSettingsChanged(): void {
+        console.log('[SVN SVNView] Settings changed, refreshing view');
+        // Only refresh if we're showing the repository setup (not if showing normal content)
+        if (!this.currentFile || this.isShowingRepositorySetup()) {
+            this.refreshView();
+        }
+    }    /**
+     * Check if currently showing repository setup
+     */
+    private isShowingRepositorySetup(): boolean {
+        const contentArea = this.viewRenderer.getLayoutManager().getContentArea();
+        if (!contentArea) return false;
+        
+        // Check for repository setup indicators
+        const hasSetupContent = 
+            contentArea.querySelector('.workspace-leaf-content') !== null ||
+            (contentArea.querySelector('h3')?.textContent?.includes('Repository Setup') ?? false) ||
+            (contentArea.textContent?.includes('Repository setup') ?? false) ||
+            (contentArea.textContent?.includes('not found in vault') ?? false) ||
+            (contentArea.textContent?.includes('Create New Repository') ?? false) ||
+            (contentArea.textContent?.includes('Checkout Existing Repository') ?? false);
+            
+        console.log('[SVN SVNView] Repository setup check:', {
+            hasSetupContent,
+            contentText: contentArea.textContent?.substring(0, 100)
+        });
+        
+        return hasSetupContent;
+    }
 
+    // === PUBLIC API METHODS (Expected by main.ts) === //
     /**
      * Refresh all data (full refresh)
      */
@@ -203,11 +250,19 @@ export class SVNView extends ItemView {
     getCurrentViewedRevision(): string | null {
         return this.currentViewedRevision;
     }
-    
+
     /**
      * Reset to working copy revision (null means working copy)
      */
     resetToWorkingCopy(): void {
         this.currentViewedRevision = null;
+    }
+
+    /**
+     * Mark user interaction to prevent DOM rebuilding during button clicks
+     */
+    private markUserInteraction(): void {
+        console.log('[SVN SVNView] markUserInteraction called - activating protection');
+        this.viewRenderer.getStateManager().startUserInteraction();
     }
 }

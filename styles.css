@@ -484,6 +484,10 @@
     color: var(--text-muted);
 }
 
+.svn-toolbar-disabled button:disabled {
+    color: var(--text-faint);
+}
+
 /* Minimal responsiveness */
 @media (max-width: 400px) {
     .svn-entry-info { gap: var(--size-2-2); }

@@ -1,22 +1,27 @@
 import { TFile, Notice, ButtonComponent } from 'obsidian';
 import { SVNClient } from '../../services/SVNClient';
 import type ObsidianSvnPlugin from '../../main';
+import { CheckoutModal } from '../../modals/CheckoutModal';
 import { join } from 'path';
 
 export class SVNRepositoryHandler {
     private plugin: ObsidianSvnPlugin;
     private svnClient: SVNClient;
     private onRefresh: () => void;
+    private onUserInteraction?: () => void;
 
-    constructor(plugin: ObsidianSvnPlugin, svnClient: SVNClient, onRefresh: () => void) {
+    constructor(plugin: ObsidianSvnPlugin, svnClient: SVNClient, onRefresh: () => void, onUserInteraction?: () => void) {
         this.plugin = plugin;
         this.svnClient = svnClient;
         this.onRefresh = onRefresh;
-    }
-
-    async validateRepository(): Promise<{ isValid: boolean; repoPath?: string; error?: string }> {
+        this.onUserInteraction = onUserInteraction;
+    }    async validateRepository(): Promise<{ isValid: boolean; repoPath?: string; error?: string }> {
         try {
-            const settings = this.plugin.settings;            if (!settings.repositoryName) {
+            const settings = this.plugin.settings;
+            console.log('[SVN RepositoryHandler] validateRepository - full settings:', settings);
+            console.log('[SVN RepositoryHandler] validateRepository - repositoryName:', settings.repositoryName);
+            
+            if (!settings.repositoryName) {
                 return { 
                     isValid: false, 
                     error: 'No repository name configured in settings' 
@@ -33,6 +38,9 @@ export class SVNRepositoryHandler {
 
             const hiddenRepoName = `.${settings.repositoryName}`;
             const repoPath = join(vaultPath, hiddenRepoName);
+            
+            console.log('[SVN RepositoryHandler] validateRepository - hiddenRepoName:', hiddenRepoName);
+            console.log('[SVN RepositoryHandler] validateRepository - repoPath:', repoPath);
 
             // Check if repository exists
             const fs = require('fs');
@@ -61,7 +69,8 @@ export class SVNRepositoryHandler {
                 error: `Error validating repository: ${error.message}` 
             };
         }
-    }    renderRepositorySetup(container: HTMLElement, currentFile: TFile): void {
+    }
+    renderRepositorySetup(container: HTMLElement, currentFile: TFile | null): void {
         container.empty();
         
         this.validateRepository().then(validation => {
@@ -75,7 +84,7 @@ export class SVNRepositoryHandler {
         });
     }
 
-    private renderRepositoryError(container: HTMLElement, validation: any, currentFile: TFile): void {
+    private renderRepositoryError(container: HTMLElement, validation: any, currentFile: TFile | null): void {
         container.createEl('h3', { 
             text: 'SVN Repository Setup Required',
             cls: 'setting-item-name'
@@ -84,22 +93,32 @@ export class SVNRepositoryHandler {
         container.createEl('p', { 
             text: validation.error,
             cls: 'setting-item-description mod-warning'
-        });        const settings = this.plugin.settings;
+        });
+
+        const settings = this.plugin.settings;
         if (!settings.repositoryName) {
             container.createEl('p', { 
                 text: 'Please configure a repository name in the plugin settings first.',
                 cls: 'setting-item-description'
             });
-
+            
             new ButtonComponent(container)
                 .setButtonText('Open Settings')
                 .setClass('mod-cta')
-                .onClick(() => {
-                    (this.plugin.app as any).setting.open();
-                    (this.plugin.app as any).setting.openTabById(this.plugin.manifest.id);
-                });
-        } else {
+                .onClick(async () => {
+                    // Wait a bit to let any ongoing refreshes complete
+                    await new Promise(resolve => setTimeout(resolve, 20));
+                    try {
+                        (this.plugin.app as any).setting.open();
+                        (this.plugin.app as any).setting.openTabById(this.plugin.manifest.id);
+                    } catch (error) {
+                        console.error('Failed to open settings:', error);
+                    }
+                });        } else {
             // Repository name is configured but repo doesn't exist
+            console.log('[SVN RepositoryHandler] Repository name configured:', settings.repositoryName);
+            console.log('[SVN RepositoryHandler] Validation error:', validation.error);
+            
             container.createEl('p', { 
                 text: `You can create a new repository '${settings.repositoryName}' or checkout an existing one.`,
                 cls: 'setting-item-description'
@@ -117,7 +136,7 @@ export class SVNRepositoryHandler {
                 .onClick(() => this.showCheckoutModal(currentFile));
         }
     }
-    private renderCheckoutOptions(container: HTMLElement, repoPath: string, currentFile: TFile): void {
+    private renderCheckoutOptions(container: HTMLElement, repoPath: string, currentFile: TFile | null): void {
         container.createEl('div', { 
             text: 'Working copy setup',
             cls: 'setting-item-name'
@@ -138,11 +157,10 @@ export class SVNRepositoryHandler {
         new ButtonComponent(buttonContainer)
             .setButtonText('Initialize working copy')
             .onClick(() => this.initWorkingCopy(repoPath, currentFile));
-    }
-
-    private async createRepository(currentFile: TFile): Promise<void> {
+    }    private async createRepository(currentFile: TFile | null): Promise<void> {
         try {
             const settings = this.plugin.settings;
+            // Use the repository name from settings (which now has a default value)
             await this.svnClient.createRepository(settings.repositoryName);
             new Notice(`Repository '${settings.repositoryName}' created successfully`);
             // After creating, initialize working copy
@@ -157,7 +175,7 @@ export class SVNRepositoryHandler {
         }
     }
 
-    private async checkoutRepository(repoPath: string, currentFile: TFile): Promise<void> {
+    private async checkoutRepository(repoPath: string, currentFile: TFile | null): Promise<void> {
         try {
             const vaultPath = this.svnClient.getVaultPath();
             const { exec } = require('child_process');
@@ -174,7 +192,7 @@ export class SVNRepositoryHandler {
             console.error('Failed to checkout repository:', error);
             new Notice(`Failed to checkout repository: ${error.message}`);
         }
-    }    private async initWorkingCopy(repoPath: string, currentFile: TFile): Promise<void> {
+    }    private async initWorkingCopy(repoPath: string, currentFile: TFile | null): Promise<void> {
         try {
             const vaultPath = this.svnClient.getVaultPath();
             const { exec } = require('child_process');
@@ -192,15 +210,34 @@ export class SVNRepositoryHandler {
             console.error('Failed to initialize working copy:', error);
             new Notice(`Failed to initialize working copy: ${error.message}`);
         }
-    }
-
-    private showCheckoutModal(currentFile: TFile): void {
-        // For now, show a simple prompt - could be enhanced with a proper modal
-        const repoUrl = prompt('Enter SVN repository URL to checkout:');
-        if (repoUrl) {
-            this.checkoutExternalRepository(repoUrl, currentFile);
-        }
-    }    private async checkoutExternalRepository(repoUrl: string, currentFile: TFile): Promise<void> {
+    }    private async showCheckoutModal(currentFile: TFile | null): Promise<void> {
+        return new Promise((resolve) => {
+            const modal = new CheckoutModal(
+                this.plugin.app,
+                'Checkout SVN Repository',
+                async (url: string) => {
+                    try {
+                        console.log('[SVN RepositoryHandler] Starting checkout from:', url);
+                        await this.checkoutExternalRepository(url, currentFile);
+                        resolve();
+                    } catch (error: any) {
+                        console.error('[SVN RepositoryHandler] Checkout failed:', error);
+                        new Notice(`Checkout failed: ${error.message}`);
+                        resolve();
+                    }
+                }
+            );
+            
+            // Handle modal close without checkout
+            const originalOnClose = modal.onClose.bind(modal);
+            modal.onClose = () => {
+                originalOnClose();
+                resolve();
+            };
+            
+            modal.open();
+        });
+    }    private async checkoutExternalRepository(repoUrl: string, currentFile: TFile | null): Promise<void> {
         try {
             const vaultPath = this.svnClient.getVaultPath();
             const { exec } = require('child_process');

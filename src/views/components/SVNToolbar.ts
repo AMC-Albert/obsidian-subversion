@@ -9,6 +9,7 @@ export class SVNToolbar {
     private fileActions: SVNFileActions;
     private onRefresh: () => void;
     private onShowRepoSetup: () => void;
+    private containerEl: HTMLElement | null = null;
 
     constructor(
         plugin: ObsidianSvnPlugin, 
@@ -26,6 +27,7 @@ export class SVNToolbar {
 
     render(container: HTMLElement, currentFile: TFile | null): void {
         container.empty();
+        this.containerEl = container;
         const toolbarEl = container.createEl('div', { cls: 'nav-buttons-container' });
 
         new ButtonComponent(toolbarEl)
@@ -73,5 +75,46 @@ export class SVNToolbar {
             .setTooltip('Repository setup')
             .setClass('clickable-icon')
             .onClick(() => this.onShowRepoSetup());
+    }
+
+    /**
+     * Enable or disable the toolbar
+     */
+    setEnabled(enabled: boolean): void {
+        console.log(`[SVN Toolbar] Setting toolbar enabled: ${enabled}`);
+        const container = this.containerEl;
+        if (!container) return;
+        
+        // Toggle the disabled class on the entire toolbar
+        if (enabled) {
+            container.removeClass('svn-toolbar-disabled');
+        } else {
+            container.addClass('svn-toolbar-disabled');
+        }
+        
+        // Disable/enable all buttons
+        const buttons = container.querySelectorAll('button');
+        buttons.forEach(button => {
+            button.disabled = !enabled;
+            if (enabled) {
+                button.removeClass('disabled');
+            } else {
+                button.addClass('disabled');
+            }
+        });
+        
+        // Disable/enable all clickable icons
+        const clickableIcons = container.querySelectorAll('.clickable-icon');
+        clickableIcons.forEach(icon => {
+            if (enabled) {
+                icon.removeClass('disabled');
+                (icon as HTMLElement).style.pointerEvents = '';
+                (icon as HTMLElement).style.opacity = '';
+            } else {
+                icon.addClass('disabled');
+                (icon as HTMLElement).style.pointerEvents = 'none';
+                (icon as HTMLElement).style.opacity = '0.5';
+            }
+        });
     }
 }

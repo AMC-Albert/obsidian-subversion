@@ -24,20 +24,34 @@ export class SvnSettingTab extends PluginSettingTab {
                 .onChange(async (value) => {
                     this.plugin.settings.svnBinaryPath = value;
                     await this.plugin.saveSettings();
-                }));
-
-        new Setting(containerEl)
+                }));        new Setting(containerEl)
             .setName('Repository name')
             .setDesc('Default name for your SVN repository (without the dot prefix). This will be used as the default when creating a new repository.')
-            .addText(text => text
-                .setPlaceholder('my-vault-repo')
-                .setValue(this.plugin.settings.repositoryName || '')
-                .onChange(async (value) => {
-                    // Strip any leading dots to ensure consistent handling
-                    const cleanValue = value.replace(/^\.+/, '');
-                    this.plugin.settings.repositoryName = cleanValue;
-                    await this.plugin.saveSettings();
-                }));
+            .addText(text => {
+                let saveTimeout: NodeJS.Timeout;
+                
+                return text
+                    .setPlaceholder('my-vault-repo')
+                    .setValue(this.plugin.settings.repositoryName || '')
+                    .onChange(async (value) => {
+                        console.log('[SVN Settings] Raw repository name input:', value);
+                        
+                        // Clear any existing timeout
+                        if (saveTimeout) {
+                            clearTimeout(saveTimeout);
+                        }
+                        
+                        // Debounce the save operation
+                        saveTimeout = setTimeout(async () => {
+                            // Strip any leading dots to ensure consistent handling
+                            const cleanValue = value.replace(/^\.+/, '');
+                            console.log('[SVN Settings] Cleaned repository name:', cleanValue);
+                            this.plugin.settings.repositoryName = cleanValue;
+                            await this.plugin.saveSettings();
+                            console.log('[SVN Settings] Saved settings:', this.plugin.settings);
+                        }, 500); // Wait 500ms after user stops typing
+                    });
+            });
 
         new Setting(containerEl)
             .setName('Auto-commit')

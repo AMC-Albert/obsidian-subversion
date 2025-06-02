@@ -83,12 +83,16 @@ export class SVNViewRenderer {
         this.layoutManager.initializeLayout();
         this.layoutManager.setupInfoPanel(this.infoPanel, this.fileActions);
     }
-
     /**
      * Handle UI state changes intelligently
      */
     async handleUIStateChange(state: UIState, currentFile: TFile | null): Promise<void> {
-        // Override state data status with recent direct status if within protection window
+        // Check if we're in a user interaction protection window
+        if (this.stateManager.isInUserInteractionWindow()) {
+            console.log('[SVN ViewRenderer] Skipping UI update - user interaction in progress');
+            return;
+        }
+          // Override state data status with recent direct status if within protection window
         if (this.stateManager.isWithinProtectionWindow() && state.data) {
             const directData = this.stateManager.getLastDirectStatusData();
             if (directData) {
@@ -180,18 +184,16 @@ export class SVNViewRenderer {
         }
           // Update content type tracking
         this.stateManager.setLastContentType(contentType);
-    }
-
-    /**
-     * Show repository setup
+    }    /**
+     * Show repository setup UI
      */
     showRepositorySetup(currentFile: TFile | null): void {
-        if (!currentFile) return;
+        console.log('[SVN ViewRenderer] Showing repository setup');
         
-        const contentEl = this.layoutManager.getContentArea();
-        if (contentEl) {
-            contentEl.empty();
-            this.repositoryHandler.renderRepositorySetup(contentEl, currentFile);
+        // Clear the content area and show repository setup
+        const contentArea = this.layoutManager.getContentArea();
+        if (contentArea) {
+            this.repositoryHandler.renderRepositorySetup(contentArea, currentFile);
         }
     }
 
