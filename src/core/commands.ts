@@ -1,6 +1,6 @@
 import { Notice, FileSystemAdapter } from 'obsidian';
 import { SVNClient } from '../services/SVNClient';
-import { CreateRepoModal } from '../ui/modals';
+import { CreateRepoModal } from '../modals';
 import type ObsidianSvnPlugin from '../main';
 
 export function registerCommands(plugin: ObsidianSvnPlugin) {

@@ -1,6 +1,6 @@
 import { TFile } from 'obsidian';
-import { SVNClient } from '../../../services/SVNClient';
-import { SVNFileData } from '../../../services/SVNDataStore';
+import { SVNClient } from '../../services/SVNClient';
+import { SVNFileData } from '../../services/SVNDataStore';
 import { UIState } from '../SVNUIController';
 import { SVNStatusDisplay } from '.';
 import { SVNViewStateManager } from './SVNViewStateManager';

@@ -1,6 +1,6 @@
 import { TFile } from 'obsidian';
-import { SVNClient } from '../../../services/SVNClient';
-import type ObsidianSvnPlugin from '../../../main';
+import { SVNClient } from '../../services/SVNClient';
+import type ObsidianSvnPlugin from '../../main';
 
 export class SVNInfoPanel {
     private plugin: ObsidianSvnPlugin;

@@ -1,6 +1,6 @@
 import { TFile, Notice, ItemView } from 'obsidian';
-import { SVNClient } from '../../../services/SVNClient';
-import type ObsidianSvnPlugin from '../../../main';
+import { SVNClient } from '../../services/SVNClient';
+import type ObsidianSvnPlugin from '../../main';
 import { CommitModal, ConfirmRevertModal, ConfirmRemoveModal, DiffModal, BlameModal } from '../../modals';
 import { SVNInfoPanel } from './SVNInfoPanel';
 

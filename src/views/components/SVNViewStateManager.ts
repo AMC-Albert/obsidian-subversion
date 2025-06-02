@@ -47,7 +47,7 @@ export class SVNViewStateManager {
         if (!state.data) return 'no-data';
         
         // Find the current file's specific status
-        const currentFileStatus = state.data.status.find(item => 
+        const currentFileStatus = state.data.status.find((item: any) => 
             item.filePath.includes(currentFilePath?.split('\\').pop() || '') || 
             item.filePath.endsWith(currentFilePath || '')
         );
@@ -152,7 +152,7 @@ export class SVNViewStateManager {
             count: state.data.history.length,
             firstRevision: state.data.history[0]?.revision,
             lastRevision: state.data.history[state.data.history.length - 1]?.revision,
-            revisions: state.data.history.slice(0, 5).map(h => h.revision).join(',')
+            revisions: state.data.history.slice(0, 5).map((h: any) => h.revision).join(',')
         };
         
         const currentHistoryHash = JSON.stringify(historyData);
@@ -176,7 +176,7 @@ export class SVNViewStateManager {
         if (!data.isWorkingCopy) return 'repository-setup';
         if (!data.isFileInSvn) return 'not-in-svn';
         
-        const isAddedNotCommitted = data.status.some(s => s.status === 'A');
+        const isAddedNotCommitted = data.status.some((s: any) => s.status === 'A');
         if (isAddedNotCommitted) return 'added-not-committed';
         
         if (data.history.length === 0) return 'no-history';

@@ -1,9 +1,9 @@
 import { TFile } from 'obsidian';
-import { SVNClient } from '../../../services/SVNClient';
-import { SVNFileData } from '../../../services/SVNDataStore';
+import { SVNClient } from '../../services/SVNClient';
+import { SVNFileData } from '../../services/SVNDataStore';
 import { UIState } from '../SVNUIController';
 import { SVNHistoryRenderer, SVNFileStateRenderer, SVNRepositoryHandler } from '.';
-import type ObsidianSvnPlugin from '../../../main';
+import type ObsidianSvnPlugin from '../../main';
 
 /**
  * Manages history rendering and content display for the FileHistoryView
@@ -72,7 +72,7 @@ export class SVNViewHistoryManager {
         }
 
         // Check if file is added but not committed
-        const isAddedNotCommitted = data.status.some(s => s.status === 'A');
+        const isAddedNotCommitted = data.status.some((s: any) => s.status === 'A');
         if (isAddedNotCommitted) {
             this.fileStateRenderer.renderAddedButNotCommitted(container, currentFile);
             return;

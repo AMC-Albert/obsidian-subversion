@@ -1,7 +1,7 @@
 import { ItemView, WorkspaceLeaf, TFile } from 'obsidian';
-import { SVNClient } from '../../services/SVNClient';
-import type ObsidianSvnPlugin from '../../main';
-import { PLUGIN_CONSTANTS } from '../../core/constants';
+import { SVNClient } from '../services/SVNClient';
+import type ObsidianSvnPlugin from '../main';
+import { PLUGIN_CONSTANTS } from '../core/constants';
 import { 
     SVNViewRenderer,
     SVNToolbar, 
@@ -16,7 +16,7 @@ import { SVNUIController, UIState } from './SVNUIController';
 
 export const FILE_HISTORY_VIEW_TYPE = PLUGIN_CONSTANTS.VIEW_TYPE;
 
-export class FileHistoryViewModular extends ItemView {
+export class SVNView extends ItemView {
     private plugin: ObsidianSvnPlugin;
     private svnClient: SVNClient;
     private currentFile: TFile | null = null;
@@ -143,7 +143,7 @@ export class FileHistoryViewModular extends ItemView {
      * Handle UI state changes - delegate to main renderer
      */
     private async handleUIStateChange(state: UIState): Promise<void> {
-        console.log('[SVN FileHistoryViewModular] handleUIStateChange called:', {
+        console.log('[SVN SVNView] handleUIStateChange called:', {
             showLoading: state.showLoading,
             hasData: !!state.data,
             error: state.error,
@@ -169,7 +169,7 @@ export class FileHistoryViewModular extends ItemView {
      * Refresh all data (full refresh)
      */
     async refreshData(): Promise<void> {
-        console.log('[SVN FileHistoryViewModular] refreshData called');
+        console.log('[SVN SVNView] refreshData called');
         await this.uiController.refreshCurrentFile();
     }
 
@@ -184,7 +184,7 @@ export class FileHistoryViewModular extends ItemView {
      * Refresh only status data (lightweight refresh)
      */
     async refreshStatus(): Promise<void> {
-        console.log('[SVN FileHistoryViewModular] refreshStatus called');
+        console.log('[SVN SVNView] refreshStatus called');
         await this.viewRenderer.refreshStatus(this.currentFile);
     }
 

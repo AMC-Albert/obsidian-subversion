@@ -1,5 +1,5 @@
 import { App, Modal, Setting, Notice } from "obsidian";
-import type ObsidianSvnPlugin from "../../main";
+import type ObsidianSvnPlugin from "../main";
 
 export class CreateRepoModal extends Modal {
     private plugin: ObsidianSvnPlugin;

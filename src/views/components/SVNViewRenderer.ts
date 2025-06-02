@@ -1,5 +1,5 @@
 import { TFile } from 'obsidian';
-import { SVNClient } from '../../../services/SVNClient';
+import { SVNClient } from '../../services/SVNClient';
 import { UIState } from '../SVNUIController';
 import { 
     SVNToolbar, 
@@ -14,7 +14,7 @@ import { SVNViewStateManager } from './SVNViewStateManager';
 import { SVNViewLayoutManager } from './SVNViewLayoutManager';
 import { SVNViewStatusManager } from './SVNViewStatusManager';
 import { SVNViewHistoryManager } from './SVNViewHistoryManager';
-import type ObsidianSvnPlugin from '../../../main';
+import type ObsidianSvnPlugin from '../../main';
 
 /**
  * Main renderer component that coordinates all rendering logic for the FileHistoryView

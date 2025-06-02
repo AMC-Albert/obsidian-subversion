@@ -1,8 +1,8 @@
 import { Component, Notice, WorkspaceLeaf } from 'obsidian';
 import { ButtonComponent } from 'obsidian';
-import { SVNClient } from '../../../services/SVNClient';
+import { SVNClient } from '../../services/SVNClient';
 import { DiffModal } from '../../modals/DiffModal';
-import { SvnLogEntry } from '../../../types';
+import { SvnLogEntry } from '../../types';
 
 export class SVNHistoryRenderer {
     private svnClient: SVNClient;

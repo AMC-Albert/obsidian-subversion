@@ -1,5 +1,5 @@
 import { TFile } from 'obsidian';
-import { SVNClient } from '../../../services/SVNClient';
+import { SVNClient } from '../../services/SVNClient';
 
 export class SVNStatusDisplay {
     private svnClient: SVNClient;

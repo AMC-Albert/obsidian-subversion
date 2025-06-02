@@ -3,7 +3,7 @@ import { SvnSettingTab } from './settings';
 import { SvnPluginSettings } from './types';
 import { registerCommands } from './core/commands';
 import { SVNClient } from './services/SVNClient';
-import { FileHistoryViewModular as FileHistoryView, FILE_HISTORY_VIEW_TYPE } from './ui/views/FileHistoryViewModular';
+import { SVNView as FileHistoryView, FILE_HISTORY_VIEW_TYPE } from './views/SVNView';
 import { PLUGIN_CONSTANTS, DEFAULT_SETTINGS, SVN_ICON_SVG } from './core/constants';
 
 /**

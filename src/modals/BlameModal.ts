@@ -1,6 +1,6 @@
 import { Modal, App, TFile } from 'obsidian';
-import { SvnBlameEntry } from '../../types';
-import type ObsidianSvnPlugin from '../../main';
+import { SvnBlameEntry } from '../types';
+import type ObsidianSvnPlugin from '../main';
 
 export class BlameModal extends Modal {
     private plugin: ObsidianSvnPlugin;

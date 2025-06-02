@@ -1,6 +1,6 @@
 import { ButtonComponent, TFile, Notice } from 'obsidian';
-import { SVNClient } from '../../../services/SVNClient';
-import type ObsidianSvnPlugin from '../../../main';
+import { SVNClient } from '../../services/SVNClient';
+import type ObsidianSvnPlugin from '../../main';
 import { SVNFileActions } from './SVNFileActions';
 
 export class SVNToolbar {

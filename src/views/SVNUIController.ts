@@ -1,7 +1,7 @@
 import { TFile } from 'obsidian';
-import { SVNDataStore, SVNFileData } from '../../services/SVNDataStore';
-import type ObsidianSvnPlugin from '../../main';
-import { SVNClient } from '../../services/SVNClient';
+import { SVNDataStore, SVNFileData } from '../services/SVNDataStore';
+import type ObsidianSvnPlugin from '../main';
+import { SVNClient } from '../services/SVNClient';
 
 export interface UIState {
     isLoading: boolean;
