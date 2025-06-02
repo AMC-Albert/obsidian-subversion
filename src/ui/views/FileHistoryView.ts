@@ -164,6 +164,16 @@ export class FileHistoryView extends ItemView {
                 } as any;
             }
         }
+        // If we have fresh direct status data, render override and skip state-driven UI updates
+        const protectionWindowMs = 5000;
+        if (this.lastDirectStatusData && Date.now() - this.lastDirectStatusUpdateTime < protectionWindowMs) {
+            console.log('[SVN FileHistoryView] Immediate override of status display with direct status data');
+            if (this.statusContainer) {
+                this.statusContainer.empty();
+                this.renderStatusWithData(this.statusContainer, this.lastDirectStatusData as any);
+            }
+            return;
+        }
         // Calculate state hash for intelligent updates
         const currentDataHash = this.calculateStateHash(state);
         const currentFileId = this.currentFile?.path || null;
@@ -223,8 +233,9 @@ export class FileHistoryView extends ItemView {
         }
           // Update status display when data changes
         if (dataChanged) {
-            console.log('[SVN FileHistoryView] Updating status display due to data change');
-            await this.updateStatusDisplay(state);
+            console.log('[SVN FileHistoryView] Data changed - using direct status update instead of stale data store status');
+            // Use direct status update to ensure accurate status
+            await this.refreshStatus();
         }
         
         // Update content area when file or data changes
@@ -883,15 +894,12 @@ export class FileHistoryView extends ItemView {
             });
             
             // Always update the status hash after successful update
-            this.lastStatusHash = newStatusHash;            // Record the timestamp of this direct update
-            this.lastDirectStatusUpdateTime = Date.now();
+            this.lastStatusHash = newStatusHash;
             
-            // Only handle direct status override if status changed
+            // Only store direct status data and timestamp if status changed
             if (statusChanged) {
                 console.log('[SVN FileHistoryView] Status changed - storing direct status data');
-                // Store direct status data for future override
                 this.lastDirectStatusData = statusData;
-                // Allow the UI to show direct status for a short period
                 this.lastDirectStatusUpdateTime = Date.now();
             }
             
