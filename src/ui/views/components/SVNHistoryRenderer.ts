@@ -118,9 +118,6 @@ export class SVNHistoryRenderer {
             }            // Perform the checkout
             await this.svnClient.checkoutRevision(filePath, revision);
             
-            // Add a small delay before forcing file reload to ensure SVN operations complete
-            await new Promise(resolve => setTimeout(resolve, 200));
-            
             // Verify the checkout worked by checking the current revision
             try {
                 const info = await this.svnClient.getInfo(filePath);
@@ -133,9 +130,6 @@ export class SVNHistoryRenderer {
               // Force Obsidian to reload the file from disk
             await this.forceFileReload(filePath);
             
-            // Add a delay before triggering refresh to ensure Obsidian has processed the file changes
-            await new Promise(resolve => setTimeout(resolve, 300));
-            
             // Show appropriate success message
             if (hadModifications) {
                 new Notice(
@@ -145,18 +139,15 @@ export class SVNHistoryRenderer {
                 );            } else {
                 new Notice(`Checked out revision ${revision}.`);
             }
-              
-            console.log(`Checked out revision ${revision} for ${filePath}`);
+                console.log(`Checked out revision ${revision} for ${filePath}`);
             
-            // Call refresh after a delay to allow file operations to complete
-            setTimeout(() => {
-                this.refreshCallback();
-            }, 300);
+            // Call refresh immediately - no need for delay since we have debouncing in the view
+            this.refreshCallback();
         } catch (error: any) {
             console.error('Error checking out revision:', error);
             new Notice(`Failed to checkout revision ${revision}: ${error.message}`, 5000);
         }
-    }private async forceFileReload(filePath: string): Promise<void> {
+    }    private async forceFileReload(filePath: string): Promise<void> {
         try {
             // Get the TFile object for the changed file
             const file = this.plugin.app.vault.getAbstractFileByPath(filePath);
@@ -164,16 +155,13 @@ export class SVNHistoryRenderer {
                 // Force Obsidian to read the file from disk and trigger change events
                 const content = await this.plugin.app.vault.adapter.read(filePath);
                 
-                // Wait a moment to ensure file system operations are complete
-                await new Promise(resolve => setTimeout(resolve, 50));
-                
                 // Trigger file modification event to refresh any open editors
                 this.plugin.app.vault.trigger('changed', file);
                 
-                // Trigger a modified event as well to ensure all listeners are notified
+                // Also trigger a modified event to ensure all listeners are notified
                 this.plugin.app.vault.trigger('modify', file);
                 
-                // Also trigger a more specific reload for open editors
+                // Update open editors more efficiently
                 this.plugin.app.workspace.iterateAllLeaves((leaf: WorkspaceLeaf) => {
                     if (leaf.view.getViewType() === 'markdown') {
                         const markdownView = leaf.view as any;

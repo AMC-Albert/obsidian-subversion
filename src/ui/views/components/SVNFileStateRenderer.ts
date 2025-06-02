@@ -46,14 +46,11 @@ export class SVNFileStateRenderer {
                     this.plugin.app,
                     'Add & Commit',
                     `Add ${currentFile.name}`,
-                    async (message: string) => {
-                        try {
+                    async (message: string) => {                        try {
                             await this.svnClient.addFile(currentFile.path);
                             await this.svnClient.commitFile(currentFile.path, message);
                             new Notice(`File ${currentFile.name} added and committed`);
-                            setTimeout(() => {
-                                this.onRefresh();
-                            }, 500);
+                            this.onRefresh();
                         } catch (error) {
                             console.error('Failed to commit file:', error);
                             new Notice(`Failed to commit: ${error.message}`);
@@ -83,13 +80,10 @@ export class SVNFileStateRenderer {
                     this.plugin.app,
                     'Commit file',
                     `Add ${currentFile.name}`,
-                    async (message: string) => {
-                        try {
+                    async (message: string) => {                        try {
                             await this.svnClient.commitFile(currentFile.path, message);
                             new Notice(`File ${currentFile.name} committed successfully`);
-                            setTimeout(() => {
-                                this.onRefresh();
-                            }, 500);
+                            this.onRefresh();
                         } catch (error) {
                             console.error('Failed to commit file:', error);
                             new Notice(`Failed to commit: ${error.message}`);

@@ -32,14 +32,11 @@ export class SVNFileActions {
             this.plugin.app,
             'Quick Commit',
             `Update ${currentFile.name}`,
-            async (message: string) => {
-                try {
+            async (message: string) => {                try {
                     await this.svnClient.commitFile(currentFile!.path, message);
                     new Notice(`File ${currentFile!.name} committed successfully.`);
-                    // Refresh the view after commit
-                    setTimeout(() => {
-                        this.onRefresh();
-                    }, 500);
+                    // Refresh the view immediately - debouncing is handled in FileHistoryView
+                    this.onRefresh();
                 } catch (error) {
                     console.error('Failed to commit file:', error);
                     new Notice(`Failed to commit: ${error.message}`);
@@ -81,13 +78,10 @@ export class SVNFileActions {
                 if (activeView && 'editor' in activeView) {
                     (activeView as any).editor.setValue(content);
                 }
+                  new Notice(`File ${currentFile!.name} reverted to last committed version.`);
                 
-                new Notice(`File ${currentFile!.name} reverted to last committed version.`);
-                
-                // Refresh the view
-                setTimeout(() => {
-                    this.onRefresh();
-                }, 500);
+                // Refresh the view immediately - debouncing is handled in FileHistoryView
+                this.onRefresh();
                 
             } catch (error) {
                 console.error('Failed to revert file:', error);

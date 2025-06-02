@@ -68,24 +68,51 @@ export class FileHistoryView extends ItemView {
         
         // Initial render
         this.updateCurrentFile();
-    }
+    }    private isRefreshing = false;
+    private pendingRefresh = false;
 
     async refreshView() {
-        // Update the SVNClient reference in case it was reinitialized
-        this.svnClient = this.plugin.svnClient;
-        this.updateComponentClients();
-        // Force a re-render of the current view
-        this.renderView();
+        // Debounce rapid refresh calls
+        if (this.isRefreshing) {
+            this.pendingRefresh = true;
+            return;
+        }
+
+        this.isRefreshing = true;
+        
+        try {
+            // Update the SVNClient reference in case it was reinitialized
+            this.svnClient = this.plugin.svnClient;
+            this.updateComponentClients();
+            // Force a re-render of the current view
+            this.renderView();
+        } finally {
+            this.isRefreshing = false;
+              // If another refresh was requested while we were processing, handle it
+            if (this.pendingRefresh) {
+                this.pendingRefresh = false;
+                // Use a minimal delay to prevent rapid successive refreshes
+                setTimeout(() => this.refreshView(), 25);
+            }
+        }
     }
 
     async refreshStatus() {
         // Only refresh the status display without rebuilding the entire view
-        this.renderView();
+        if (this.currentFile) {
+            const statusContainer = this.containerEl.querySelector('.svn-status-display') as HTMLElement;
+            if (statusContainer) {
+                statusContainer.empty();
+                this.statusDisplay.render(statusContainer, this.currentFile);
+            }
+        }
     }    private updateComponentClients(): void {
-        // Update SVN client references in all components
+        // Update SVN client references in all components - only recreate when necessary
         this.fileActions = new SVNFileActions(this.plugin, this.svnClient, () => this.refreshView());
         this.toolbar = new SVNToolbar(this.plugin, this.svnClient, this.fileActions, () => this.refreshView(), () => this.showRepositorySetup());
-        this.statusDisplay = new SVNStatusDisplay(this.svnClient);this.historyRenderer = new SVNHistoryRenderer(this.svnClient, this.plugin, () => this.refreshView());        this.infoPanel = new SVNInfoPanel(this.plugin, this.svnClient);
+        this.statusDisplay = new SVNStatusDisplay(this.svnClient);
+        this.historyRenderer = new SVNHistoryRenderer(this.svnClient, this.plugin, () => this.refreshView());
+        this.infoPanel = new SVNInfoPanel(this.plugin, this.svnClient);
         this.fileStateRenderer = new SVNFileStateRenderer(this.plugin, this.svnClient, () => this.refreshView());
         this.repositoryHandler = new SVNRepositoryHandler(this.plugin, this.svnClient, () => this.refreshView());
     }
@@ -110,13 +137,14 @@ export class FileHistoryView extends ItemView {
         // Main content area
         const contentArea = this.containerEl.createEl('div', { cls: 'svn-history-content' });
         this.loadFileHistory(contentArea);
-    }
-
-    private async updateCurrentFile() {
+    }    private async updateCurrentFile() {
         const activeFile = this.app.workspace.getActiveFile();
         if (activeFile !== this.currentFile) {
             this.currentFile = activeFile;
-            this.renderView();
+            // Only render if we actually changed files and we're not currently refreshing
+            if (!this.isRefreshing) {
+                this.renderView();
+            }
         }
     }
 

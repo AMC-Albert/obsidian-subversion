@@ -89,8 +89,7 @@ export class SVNClient {
             if (!workingCopyRoot) {
                 throw new Error('File is not in an SVN working copy');
             }
-            
-            // First, revert any local changes to the file to avoid conflicts
+              // First, revert any local changes to the file to avoid conflicts
             try {
                 const revertCommand = `${this.svnPath} revert "${absolutePath}"`;
                 await execPromise(revertCommand, { cwd: workingCopyRoot });
@@ -100,17 +99,11 @@ export class SVNClient {
                 console.log('No local changes to revert:', revertError.message);
             }
             
-            // Add a small delay to ensure file system operations complete
-            await new Promise(resolve => setTimeout(resolve, 100));
-            
             // Use svn update with specific revision for the single file
             // This properly updates the working copy metadata while changing just this file
             const updateCommand = `${this.svnPath} update -r ${revision} "${absolutePath}"`;
             const result = await execPromise(updateCommand, { cwd: workingCopyRoot });
             console.log('SVN update result:', result.stdout);
-            
-            // Add another small delay to ensure SVN operations complete
-            await new Promise(resolve => setTimeout(resolve, 100));
             
             console.log(`Checked out revision ${revision} for file ${filePath}`);
         } catch (error) {

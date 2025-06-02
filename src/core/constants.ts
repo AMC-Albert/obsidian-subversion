@@ -19,11 +19,10 @@ export const PLUGIN_CONSTANTS = {
         MISSING: '!',
         EXTERNAL: 'X'
     },
-    
-    // UI constants
+      // UI constants
     UI: {
-        REFRESH_DELAY: 500,
-        STATUS_UPDATE_DELAY: 100
+        REFRESH_DELAY: 100,  // Reduced from 500ms to prevent jarring visual flashing
+        STATUS_UPDATE_DELAY: 50  // Reduced from 100ms
     }
 } as const;
 
