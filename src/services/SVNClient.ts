@@ -112,15 +112,16 @@ export class SVNClient {
 		} catch (error) {
 			throw new Error(`Failed to checkout revision ${revision}: ${error.message}`);
 		}
-	}
-
-	async commitFile(filePath: string, message: string): Promise<void> {
+	}	async commitFile(filePath: string, message: string): Promise<void> {
 		const fullPath = this.resolveAbsolutePath(filePath);
 		console.log('[SVN Client] commitFile called with:', { fullPath, message });
 
 		try {
 			// Ensure parent directories are versioned before committing
 			await this.ensureParentDirectoriesAreVersioned(fullPath);
+			
+			// Ensure the file itself is added to SVN
+			await this.ensureFileIsAdded(fullPath);
 
 			const command = `svn commit -m "${message}" "${fullPath}"`;
 			console.log('[SVN Client] Executing command:', { command });
@@ -128,6 +129,12 @@ export class SVNClient {
 
 			if (stderr) {
 				console.error(`[SVN Client] Error committing file ${fullPath}: ${stderr}`);
+				
+				// Check for the specific error about parent directory not being versioned
+				if (stderr.includes('is not known to exist in the repository')) {
+					throw new Error(`Failed to commit file: Parent directory is not versioned. This should have been handled automatically. ${stderr}`);
+				}
+				
 				throw new Error(`Failed to commit file: ${stderr}`);
 			}
 			console.log(`[SVN Client] File ${fullPath} committed successfully: ${stdout}`);
@@ -135,9 +142,7 @@ export class SVNClient {
 			console.error(`[SVN Client] Exception in commitFile for ${fullPath}: ${error}`);
 			throw error; // Re-throw the original error for higher-level handling
 		}
-	}
-
-	async ensureParentDirectoriesAreVersioned(filePath: string): Promise<void> {
+	}	async ensureParentDirectoriesAreVersioned(filePath: string): Promise<void> {
 		let parentDir = dirname(filePath);
 		const repoRoot = this.findSvnWorkingCopy(filePath);
 
@@ -146,18 +151,27 @@ export class SVNClient {
 			return;
 		}
 
-		const pathQueue: string[] = [];
+		const dirsToAdd: string[] = [];
+		const dirsToCommit: string[] = [];
 
 		// Traverse up from the file's parent directory to the repository root
 		while (parentDir && parentDir.startsWith(repoRoot) && parentDir !== repoRoot) {
-			const parentStatus = await this.getStatus(parentDir);
-			// Check if the directory itself is unversioned or missing
-			const isUnversionedOrMissing = parentStatus.some(s => s.filePath === parentDir && (s.status === '?' || s.status === '!'));
-			const isVersioned = parentStatus.length > 0 && !isUnversionedOrMissing;
+			const isVersioned = await this.isDirectoryVersioned(parentDir);
 
 			if (!isVersioned) {
-				// Add to the beginning of the queue to process deepest paths first when adding
-				pathQueue.unshift(parentDir);
+				// Check if the directory is already added but not committed
+				const status = await this.getStatus(parentDir);
+				const dirStatus = status.find(s => this.comparePaths(s.filePath, parentDir));
+				
+				if (dirStatus && dirStatus.status === 'A') {
+					// Directory is added but not committed
+					dirsToCommit.unshift(parentDir);
+					console.log(`[SVN Client] Directory ${parentDir} is added but needs to be committed`);
+				} else {
+					// Directory is not versioned at all
+					dirsToAdd.unshift(parentDir);
+					console.log(`[SVN Client] Directory ${parentDir} needs to be added`);
+				}
 			}
 			
 			const grandParentDir = dirname(parentDir);
@@ -167,15 +181,27 @@ export class SVNClient {
 			parentDir = grandParentDir;
 		}
 
-		// Add directories from the queue, starting from the highest unversioned parent
-		for (const dirToAdd of pathQueue) {
-			console.log(`[SVN Client] Parent directory ${dirToAdd} is not versioned. Adding with --depth empty.`);
+		// First, add directories that aren't versioned yet
+		for (const dirToAdd of dirsToAdd) {
+			console.log(`[SVN Client] Adding directory ${dirToAdd} with --depth empty`);
 			try {
 				await this.add(dirToAdd, true); // true for --depth empty
 			} catch (addError) {
-				console.error(`[SVN Client] Failed to add parent directory ${dirToAdd}: ${addError}`);
-				// Decide if we should throw or try to continue. For now, let's throw.
-				throw new Error(`Failed to add parent directory ${dirToAdd} during pre-commit check: ${addError}`);
+				console.error(`[SVN Client] Failed to add directory ${dirToAdd}: ${addError}`);
+				throw new Error(`Failed to add directory ${dirToAdd} during pre-commit check: ${addError}`);
+			}
+		}
+
+		// Then, commit directories that are added but not committed
+		for (const dirToCommit of dirsToCommit) {
+			console.log(`[SVN Client] Committing directory ${dirToCommit}`);
+			try {
+				const command = `svn commit -m "Add directory" "${dirToCommit}"`;
+				await execPromise(command);
+				console.log(`[SVN Client] Successfully committed directory ${dirToCommit}`);
+			} catch (commitError) {
+				console.error(`[SVN Client] Failed to commit directory ${dirToCommit}: ${commitError}`);
+				throw new Error(`Failed to commit directory ${dirToCommit} during pre-commit check: ${commitError}`);
 			}
 		}
 	}
@@ -686,5 +712,72 @@ export class SVNClient {
 		
 		console.log(`[SVN] comparePaths: No direct match - FALSE`);
 		return false;
+	}
+	/**
+	 * Check if a directory is committed to the repository (not just added)
+	 */
+	private async isDirectoryVersioned(dirPath: string): Promise<boolean> {
+		try {
+			const workingCopyRoot = this.findSvnWorkingCopy(dirPath);
+			if (!workingCopyRoot) {
+				return false;
+			}
+
+			// First check svn info to see if the directory exists in SVN
+			const command = `${this.svnPath} info "${dirPath}"`;
+			console.log(`[SVN Client] Checking if directory is versioned: ${dirPath}`);
+			
+			const { stdout, stderr } = await execPromise(command, { cwd: workingCopyRoot });
+			
+			// If svn info succeeds and returns output, check if it's actually committed
+			if (stdout && stdout.includes('Path:')) {
+				// Check if the directory has "Schedule: add" which means it's added but not committed
+				if (stdout.includes('Schedule: add')) {
+					console.log(`[SVN Client] Directory ${dirPath} is added but not committed yet`);
+					return false; // Not yet committed to repository
+				}
+				
+				console.log(`[SVN Client] Directory ${dirPath} is versioned and committed`);
+				return true;
+			}
+			
+			console.log(`[SVN Client] Directory ${dirPath} is not versioned (no info output)`);
+			return false;
+		} catch (error) {
+			// If svn info fails, the directory is likely not versioned
+			console.log(`[SVN Client] Directory ${dirPath} is not versioned (svn info failed): ${error.message}`);
+			return false;
+		}
+	}
+
+	/**
+	 * Ensure a file is added to SVN if it's not already versioned
+	 */
+	private async ensureFileIsAdded(filePath: string): Promise<void> {
+		try {
+			const workingCopyRoot = this.findSvnWorkingCopy(filePath);
+			if (!workingCopyRoot) {
+				throw new Error(`File ${filePath} is not in an SVN working copy`);
+			}
+
+			// Check if the file is already versioned or needs to be added
+			const status = await this.getStatus(filePath);
+			const fileStatus = status.find(s => this.comparePaths(s.filePath, filePath));
+			
+			if (!fileStatus || fileStatus.status === '?') {
+				// File is unversioned, add it
+				console.log(`[SVN Client] File ${filePath} is not versioned. Adding it.`);
+				await this.add(filePath, false);
+			} else if (fileStatus.status === 'A') {
+				// File is already added
+				console.log(`[SVN Client] File ${filePath} is already added to SVN.`);
+			} else {
+				// File is already versioned
+				console.log(`[SVN Client] File ${filePath} is already versioned (status: ${fileStatus.status}).`);
+			}
+		} catch (error) {
+			console.error(`[SVN Client] Error ensuring file is added: ${error.message}`);
+			throw new Error(`Failed to ensure file is added to SVN: ${error.message}`);
+		}
 	}
 }
