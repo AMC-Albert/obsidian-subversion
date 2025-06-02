@@ -47,6 +47,12 @@ export class FileHistoryView extends ItemView {
     private lastStatusHash: string | null = null;
     private lastContentType: string | null = null;
     private lastHistoryHash: string | null = null;
+    private isDirectStatusUpdate = false;
+    private lastDirectStatusUpdateTime = 0;
+    private allowNextUIStateUpdate = false;
+    // Store the last direct status data to override stale state data
+    private lastDirectStatusData: { isWorkingCopy: boolean; status: any[]; info: any | null } | null = null;
+    private suppressNextUIStateChange = false;
 
     constructor(leaf: WorkspaceLeaf, plugin: ObsidianSvnPlugin) {
         super(leaf);
@@ -55,9 +61,9 @@ export class FileHistoryView extends ItemView {
         
         // Initialize UI controller
         this.uiController = new SVNUIController(plugin, this.svnClient);
-        
-        // Initialize components with simpler refresh callback
-        this.fileActions = new SVNFileActions(plugin, this.svnClient, () => this.refreshData());
+          // Initialize components with simpler refresh callback
+        // Use refreshStatus for file actions (faster, status-only updates after file operations)
+        this.fileActions = new SVNFileActions(plugin, this.svnClient, () => this.refreshStatus());
         this.toolbar = new SVNToolbar(plugin, this.svnClient, this.fileActions, () => this.refreshData(), () => this.showRepositorySetup());
         this.statusDisplay = new SVNStatusDisplay(this.svnClient);
         this.historyRenderer = new SVNHistoryRenderer(this.svnClient, plugin, () => this.refreshData());
@@ -124,7 +130,15 @@ export class FileHistoryView extends ItemView {
             this.currentFile = activeFile;
             await this.uiController.setCurrentFile(activeFile);
         }
-    }    private handleUIStateChange(state: UIState): void {
+    }
+    private async handleUIStateChange(state: UIState): Promise<void> {
+        // Override state data status with recent direct status if within protection window
+        const protectionWindowMs = 5000;
+        if (this.lastDirectStatusData && Date.now() - this.lastDirectStatusUpdateTime < protectionWindowMs && state.data) {
+            console.log('[SVN FileHistoryView] Overriding state data.status with direct status override');
+            state.data.status = this.lastDirectStatusData.status as any;
+            state.data.hasLocalChanges = this.lastDirectStatusData.status.some((s: any) => s.status === 'M' || s.status === 'A' || s.status === 'D');
+        }
         console.log('[SVN FileHistoryView] UI State Change:', {
             isLoading: state.isLoading,
             showLoading: state.showLoading,
@@ -133,6 +147,23 @@ export class FileHistoryView extends ItemView {
             timestamp: new Date().toISOString()
         });
         
+        // Override stale state data with direct status data if applicable
+        if (this.lastDirectStatusData && state.data && Array.isArray(state.data.status) && state.data.status.length === 0) {
+            const timeSinceDirect = Date.now() - this.lastDirectStatusUpdateTime;
+            if (timeSinceDirect < 5000) {
+                console.log('[SVN FileHistoryView] Overriding stale state data with direct status data:', {
+                    timeSinceDirect: timeSinceDirect + 'ms',
+                    overrideCount: this.lastDirectStatusData.status.length
+                });
+                state.data = {
+                    ...state.data,
+                    isWorkingCopy: this.lastDirectStatusData.isWorkingCopy,
+                    status: this.lastDirectStatusData.status,
+                    info: this.lastDirectStatusData.info || state.data.info,
+                    hasLocalChanges: this.lastDirectStatusData.status.some((s: any) => s.status === 'M' || s.status === 'A' || s.status === 'D')
+                } as any;
+            }
+        }
         // Calculate state hash for intelligent updates
         const currentDataHash = this.calculateStateHash(state);
         const currentFileId = this.currentFile?.path || null;
@@ -152,7 +183,7 @@ export class FileHistoryView extends ItemView {
         
         if (fileChanged || dataChanged) {
             console.log('[SVN FileHistoryView] Triggering UI update');
-            this.updateViewIntelligently(state, fileChanged, dataChanged);
+            await this.updateViewIntelligently(state, fileChanged, dataChanged);
             this.lastDataHash = currentDataHash;
             this.lastFileId = currentFileId;
         } else {
@@ -179,7 +210,7 @@ export class FileHistoryView extends ItemView {
     }    /**
      * Intelligently update only what has changed
      */
-    private updateViewIntelligently(state: UIState, fileChanged: boolean, dataChanged: boolean): void {
+    private async updateViewIntelligently(state: UIState, fileChanged: boolean, dataChanged: boolean): Promise<void> {
         console.log('[SVN FileHistoryView] updateViewIntelligently:', { fileChanged, dataChanged });
         
         // Ensure layout is initialized
@@ -190,11 +221,10 @@ export class FileHistoryView extends ItemView {
             console.log('[SVN FileHistoryView] Updating toolbar due to file change');
             this.updateToolbar();
         }
-        
-        // Update status display when data changes
+          // Update status display when data changes
         if (dataChanged) {
             console.log('[SVN FileHistoryView] Updating status display due to data change');
-            this.updateStatusDisplay(state);
+            await this.updateStatusDisplay(state);
         }
         
         // Update content area when file or data changes
@@ -216,8 +246,76 @@ export class FileHistoryView extends ItemView {
     }    /**
      * Update status display section only
      */
-    private updateStatusDisplay(state: UIState): void {
+    private async updateStatusDisplay(state: UIState): Promise<void> {
         if (!this.statusContainer) return;
+        // If we have fresh direct status data, override and render immediately
+        const protectionWindowMs = 5000;
+        if (this.lastDirectStatusData && Date.now() - this.lastDirectStatusUpdateTime < protectionWindowMs) {
+            console.log('[SVN FileHistoryView] Rendering direct status override:', this.lastDirectStatusData.status.length);
+            this.statusContainer.empty();
+            this.renderStatusWithData(this.statusContainer, this.lastDirectStatusData as any);
+            return;
+        }
+        
+        // Skip hash comparison during direct status updates to avoid conflicts
+        if (this.isDirectStatusUpdate) {
+            console.log('[SVN FileHistoryView] Skipping UI state status update - direct update in progress');
+            return;
+        }
+        
+        // Check if we should proactively run a direct status update
+        // This helps prevent showing stale "Up to date" when the file is actually modified
+        if (state.data && state.data.status && state.data.status.length === 0 && this.currentFile) {
+            const timeSinceDirectUpdate = Date.now() - this.lastDirectStatusUpdateTime;
+            // If we haven't done a direct update recently and the data shows no status items,
+            // but the file might actually be modified, do a quick direct status check
+            if (timeSinceDirectUpdate > 3000) { // 3 seconds cooldown
+                console.log('[SVN FileHistoryView] Data shows no status items - performing proactive status check');
+                // Run direct status update asynchronously to get real-time status
+                this.updateFileStatusDirect().catch(error => {
+                    console.error('[SVN FileHistoryView] Proactive status check failed:', error);
+                });
+                // Continue with current update but note that a fresh check is running
+            }
+        }
+        // Skip or override stale state updates if a direct status update happened recently
+        const timeSinceDirectUpdate = Date.now() - this.lastDirectStatusUpdateTime;
+        if (this.lastDirectStatusData && timeSinceDirectUpdate < 5000) {
+            // Render direct status override
+            console.log('[SVN FileHistoryView] Overriding status display with direct status data:', {
+                timeSinceDirectUpdate: timeSinceDirectUpdate + 'ms',
+                statusCount: this.lastDirectStatusData.status.length
+            });
+            this.statusContainer.empty();
+            this.renderStatusWithData(this.statusContainer, this.lastDirectStatusData as any);
+            // Do not clear direct status data here; let it persist for the window
+            return;
+        }
+        // If allowedNextUIStateUpdate is false, skip stale state updates
+        if (timeSinceDirectUpdate < 5000 && !this.allowNextUIStateUpdate) {
+            console.log('[SVN FileHistoryView] Skipping UI state status update - recent direct update and no override:', {
+                timeSinceDirectUpdate: timeSinceDirectUpdate + 'ms',
+                allowNextUpdate: this.allowNextUIStateUpdate
+            });
+            return;
+        }
+          // Always use direct status for actual status information instead of potentially stale UI state data
+        if (!state.isLoading && !state.showLoading && this.currentFile) {
+            console.log('[SVN FileHistoryView] Using direct status check instead of UI state data to ensure accuracy');
+            // Clear the allow flag since we're bypassing UI state data
+            this.allowNextUIStateUpdate = false;
+            // Use direct status update for accurate, real-time status (non-blocking)
+            this.updateFileStatusDirect().catch(error => {
+                console.error('[SVN FileHistoryView] Error in direct status update:', error);
+            });
+            return;
+        }
+        
+        // Clear the allow flag after first use
+        if (this.allowNextUIStateUpdate) {
+            console.log('[SVN FileHistoryView] Allowing UI state update after direct status change');
+            this.allowNextUIStateUpdate = false;
+        }
         
         // Preserve existing status during loading states to avoid flicker
         if (state.showLoading && this.lastStatusHash && this.lastStatusHash !== 'no-data') {
@@ -262,15 +360,33 @@ export class FileHistoryView extends ItemView {
         
         if (!state.data) return 'no-data';
         
+        // Find the current file's specific status
+        const currentFileStatus = state.data.status.find(item => 
+            item.filePath.includes(this.currentFile?.name || '') || 
+            item.filePath.endsWith(this.currentFile?.path || '')
+        );
+        
         const statusData = {
             isWorkingCopy: state.data.isWorkingCopy,
             revision: state.data.info?.revision,
             author: state.data.info?.lastChangedAuthor,
             date: state.data.info?.lastChangedDate,
-            fileStatus: state.data.status.find(item => 
-                item.filePath.includes(this.currentFile?.name || '') || 
-                item.filePath.endsWith(this.currentFile?.path || '')
-            )?.status
+            // Include file path to make hash more specific
+            filePath: this.currentFile?.path,
+            // Include the complete status information
+            fileStatus: currentFileStatus?.status,
+            fileStatusPath: currentFileStatus?.filePath,
+            // Include total count and summary for better change detection
+            totalStatusItems: state.data.status.length,
+            hasModifications: state.data.status.some((item: any) => {
+                return item.status && typeof item.status === 'string' && (
+                    item.status.includes('M') || 
+                    item.status.includes('A') || 
+                    item.status.includes('D')
+                );
+            }),
+            // Add a timestamp factor to ensure freshness when direct updates occur
+            timeSinceDirectUpdate: Date.now() - this.lastDirectStatusUpdateTime
         };
         
         return JSON.stringify(statusData);
@@ -388,13 +504,17 @@ export class FileHistoryView extends ItemView {
         }
         
         return changed;
-    }/**
+    }
+    
+    /**
      * Legacy method - now replaced by intelligent updates
      */
     private renderViewWithState(state: UIState): void {
         // This method is now deprecated in favor of intelligent updates
         this.updateViewIntelligently(state, true, true);
-    }private renderStatusWithData(container: HTMLElement, data: SVNFileData): void {
+    }
+    
+    private renderStatusWithData(container: HTMLElement, data: SVNFileData): void {
         // Create status display with loaded data
         container.empty();
         
@@ -438,11 +558,18 @@ export class FileHistoryView extends ItemView {
                 });
             }
         }
-        
-        // Show file modification status
+          // Show file modification status
         const statusTextEl = statusContainer.createEl('span', { cls: 'svn-status-text' });
         
+        // Debug logging to see what status data we have
+        console.log('[SVN FileHistoryView] Rendering status with data:', {
+            statusCount: data.status?.length || 0,
+            statusItems: data.status?.map(item => ({ path: item.filePath, status: item.status })) || [],
+            currentFile: this.currentFile?.path
+        });
+        
         if (!data.status || data.status.length === 0) {
+            console.log('[SVN FileHistoryView] No status items - showing "Up to date"');
             statusTextEl.setText('Up to date');
             statusTextEl.addClass('svn-status-clean');
         } else {
@@ -452,16 +579,33 @@ export class FileHistoryView extends ItemView {
                 item.filePath.endsWith(this.currentFile?.path || '')
             );
             
+            console.log('[SVN FileHistoryView] File status search result:', {
+                found: !!fileStatus,
+                fileStatus: fileStatus || 'none',
+                searchTerms: {
+                    name: this.currentFile?.name,
+                    path: this.currentFile?.path
+                }
+            });
+            
             if (!fileStatus) {
+                console.log('[SVN FileHistoryView] No matching file status - showing "Up to date"');
                 statusTextEl.setText('Up to date');
-                statusTextEl.addClass('svn-status-clean');
-            } else {
+                statusTextEl.addClass('svn-status-clean');            } else {
                 const statusCode = fileStatus.status.charAt(0);
-                
-                switch (statusCode) {
+                console.log('[SVN FileHistoryView] Found file status:', {
+                    fullStatus: fileStatus.status,
+                    statusCode: statusCode,
+                    filePath: fileStatus.filePath
+                });
+                  switch (statusCode) {
                     case 'M':
                         statusTextEl.setText('Modified');
                         statusTextEl.addClass('svn-status-modified');
+                        
+                        // Add a small hint if we know this is whitespace-only changes
+                        // Note: This would require storing the change analysis result
+                        // For now, just show the standard "Modified" status
                         break;
                     case 'A':
                         statusTextEl.setText('Added');
@@ -654,16 +798,113 @@ export class FileHistoryView extends ItemView {
     async refreshView() {
         // Legacy method for backward compatibility
         await this.refreshData();
-    }
-
-    async refreshStatus() {
+    }    async refreshStatus() {
         // For status-only refreshes (like file modifications), use lightweight update
-        console.log('[SVN FileHistoryView] refreshStatus called - using lightweight status update');
+        console.log('[SVN FileHistoryView] refreshStatus called - using direct status update');
         
         if (!this.currentFile) return;
         
-        // Use the lightweight update method that only fetches and updates status
-        await this.updateFileStatus();
+        // Use direct status update without retry logic for better performance
+        await this.updateFileStatusDirect();
+    }    /**
+     * Direct status update without retry logic - for simple refreshes
+     */
+    async updateFileStatusDirect(): Promise<void> {
+        if (!this.currentFile || !this.statusContainer) return;
+        
+        console.log('[SVN FileHistoryView] Performing direct status update for:', this.currentFile.path);
+        
+        try {
+            // Set flag to indicate we're doing a direct update
+            this.isDirectStatusUpdate = true;
+            
+            // Get fresh status data directly without retry logic
+            const [isWorkingCopy, statusResult, infoResult] = await Promise.all([
+                this.svnClient.isWorkingCopy(this.currentFile.path),
+                this.svnClient.getStatus(this.currentFile.path).catch(() => []),
+                this.svnClient.getInfo(this.currentFile.path).catch(() => null)
+            ]);
+            
+            // Debug: Log the raw SVN status result
+            console.log('[SVN FileHistoryView] Raw SVN status result:', {
+                statusResult,
+                statusCount: Array.isArray(statusResult) ? statusResult.length : 0,
+                currentFile: this.currentFile.path
+            });
+              // If we have status items, check if there are actual differences
+            if (Array.isArray(statusResult) && statusResult.length > 0) {
+                const modifiedItem = statusResult.find((item: any) => {
+                    if (!item.status || typeof item.status !== 'string') return false;
+                    if (!item.status.includes('M')) return false;
+                    return item.filePath.includes(this.currentFile!.name) || 
+                           item.filePath.endsWith(this.currentFile!.path);
+                });
+                
+                if (modifiedItem) {
+                    try {
+                        const diff = await this.svnClient.getDiff(this.currentFile.path);
+                        const hasActualChanges = diff.trim().length > 0;
+                        
+                        // Analyze the type of changes
+                        const changeAnalysis = this.analyzeDiffChanges(diff);
+                        console.log('[SVN FileHistoryView] File shows as modified - checking diff:', {
+                            filePath: this.currentFile.path,
+                            diffLength: diff.length,
+                            diffContent: diff.substring(0, 200) + (diff.length > 200 ? '...' : ''),
+                            hasActualChanges,
+                            changeType: changeAnalysis.type,
+                            isWhitespaceOnly: changeAnalysis.isWhitespaceOnly,
+                            description: changeAnalysis.description
+                        });
+                    } catch (error) {
+                        console.error('[SVN FileHistoryView] Error getting diff for modified file:', error);
+                    }
+                }
+            }
+            
+            const statusData = {
+                isWorkingCopy,
+                status: Array.isArray(statusResult) ? statusResult : [],
+                info: infoResult
+            };
+            
+            // Update only the status display
+            this.statusContainer.empty();
+            this.renderStatusWithData(this.statusContainer, statusData as any);
+              // Update the status hash to reflect the new status
+            const newStatusHash = this.calculateStatusHashFromData(statusData);
+            const statusChanged = this.lastStatusHash !== newStatusHash;
+            
+            console.log('[SVN FileHistoryView] Direct status updated successfully, changed:', statusChanged);
+            console.log('[SVN FileHistoryView] Status hash comparison:', {
+                oldHash: this.lastStatusHash?.substring(0, 100) + '...',
+                newHash: newStatusHash.substring(0, 100) + '...',
+                changed: statusChanged
+            });
+            
+            // Always update the status hash after successful update
+            this.lastStatusHash = newStatusHash;            // Record the timestamp of this direct update
+            this.lastDirectStatusUpdateTime = Date.now();
+            
+            // Only handle direct status override if status changed
+            if (statusChanged) {
+                console.log('[SVN FileHistoryView] Status changed - storing direct status data');
+                // Store direct status data for future override
+                this.lastDirectStatusData = statusData;
+                // Allow the UI to show direct status for a short period
+                this.lastDirectStatusUpdateTime = Date.now();
+            }
+            
+        } catch (error) {
+            console.error('[SVN FileHistoryView] Failed to update status directly:', error);
+            // Fall back to showing basic status
+            if (this.currentFile) {
+                this.statusDisplay.render(this.statusContainer, this.currentFile);
+            }
+        } finally {
+            // Clear the flag
+            this.isDirectStatusUpdate = false;
+        }
     }
 
     private showRepositorySetup(): void {
@@ -712,11 +953,10 @@ export class FileHistoryView extends ItemView {
     // Reset to working copy revision (null means working copy)
     resetToWorkingCopy(): void {
         this.currentViewedRevision = null;
-    }
-
-    /**
+    }    /**
      * Lightweight status-only update for file modifications
      * This bypasses the full data loading and cache to provide immediate status updates
+     * Uses retry logic only when there's evidence of potential reversion
      */
     async updateFileStatus(): Promise<void> {
         if (!this.currentFile || !this.statusContainer) return;
@@ -724,17 +964,47 @@ export class FileHistoryView extends ItemView {
         console.log('[SVN FileHistoryView] Performing lightweight status update for:', this.currentFile.path);
         
         try {
-            // Get fresh status data without cache
-            const statusData = await this.getStatusDataWithRetry();
+            // First try a direct status check
+            const [isWorkingCopy, statusResult, infoResult] = await Promise.all([
+                this.svnClient.isWorkingCopy(this.currentFile.path),
+                this.svnClient.getStatus(this.currentFile.path).catch(() => []),
+                this.svnClient.getInfo(this.currentFile.path).catch(() => null)
+            ]);
+            
+            const statusData = {
+                isWorkingCopy,
+                status: Array.isArray(statusResult) ? statusResult : [],
+                info: infoResult
+            };
+            
+            const newStatusHash = this.calculateStatusHashFromData(statusData);
+            const isModified = await this.isFileModifiedFromStatus(statusData);
+            
+            // Only use retry logic if:
+            // 1. File appears modified AND
+            // 2. Status hash suggests a recent change AND
+            // 3. We have a previous status hash to compare against
+            const shouldUseRetryLogic = isModified && 
+                                       this.lastStatusHash && 
+                                       newStatusHash !== this.lastStatusHash &&
+                                       this.lastStatusHash !== 'no-data';
+            
+            let finalStatusData = statusData;
+            if (shouldUseRetryLogic) {
+                console.log('[SVN FileHistoryView] Using retry logic due to potential reversion detection');
+                finalStatusData = await this.getStatusDataWithRetry();
+            } else {
+                console.log('[SVN FileHistoryView] Using direct status - no retry needed');
+            }
             
             // Update only the status display
             this.statusContainer.empty();
-            this.renderStatusWithData(this.statusContainer, statusData as any);
+            this.renderStatusWithData(this.statusContainer, finalStatusData as any);
             
             // Update the status hash to reflect the new status
-            const newStatusHash = this.calculateStatusHashFromData(statusData);
-            const statusChanged = this.lastStatusHash !== newStatusHash;
-            this.lastStatusHash = newStatusHash;
+            const finalStatusHash = this.calculateStatusHashFromData(finalStatusData);
+            const statusChanged = this.lastStatusHash !== finalStatusHash;
+            this.lastStatusHash = finalStatusHash;
             
             console.log('[SVN FileHistoryView] Status updated successfully, changed:', statusChanged);
             
@@ -745,13 +1015,14 @@ export class FileHistoryView extends ItemView {
                 this.statusDisplay.render(this.statusContainer, this.currentFile);
             }
         }
-    }    /**
+    }/**
      * Get status data with smart retry logic to handle file reversions
-     * Detects when files are changed back to their original state
+     * Only retries when there's evidence of potential reversion (status changed recently)
      */
     private async getStatusDataWithRetry(maxRetries: number = 3): Promise<any> {
         const currentHash = this.lastStatusHash;
         let lastStatusData: any = null;
+        let lastDiffLength: number | null = null;
         
         for (let attempt = 0; attempt <= maxRetries; attempt++) {
             // Add progressively longer delays for retry attempts
@@ -772,36 +1043,67 @@ export class FileHistoryView extends ItemView {
                 status: Array.isArray(statusResult) ? statusResult : [],
                 info: infoResult
             };
-            
             const newHash = this.calculateStatusHashFromData(statusData);
-            const isModified = this.isFileModifiedFromStatus(statusData);
+            const isModified = await this.isFileModifiedFromStatus(statusData);
             
             console.log(`[SVN FileHistoryView] Attempt ${attempt}: modified=${isModified}, hash=${newHash.substring(0, 20)}...`);
             
             // Store the data from this attempt
             lastStatusData = statusData;
             
-            // On first attempt, if file appears modified, continue to retry
-            if (attempt === 0 && isModified) {
-                console.log('[SVN FileHistoryView] File appears modified, will retry to check for reversion');
-                continue;
+            // Get current diff length to track changes
+            let currentDiffLength: number | null = null;
+            if (isModified && this.currentFile) {
+                try {
+                    const diff = await this.svnClient.getDiff(this.currentFile.path);
+                    currentDiffLength = diff.trim().length;
+                } catch (error) {
+                    console.error('[SVN FileHistoryView] Error getting diff for retry logic:', error);
+                }
             }
             
-            // If this is a retry and the status changed from the original, we found the update
-            if (attempt > 0 && newHash !== currentHash) {
-                console.log(`[SVN FileHistoryView] Status change detected on retry ${attempt}`);
-                return statusData;
+            // On first attempt, only retry if we suspect the file might be in transition
+            // (recently reverted or recently modified)
+            if (attempt === 0 && isModified && currentHash) {
+                // Only retry if the hash suggests a recent change or if we have no previous diff baseline
+                const hashChanged = newHash !== currentHash;
+                if (hashChanged) {
+                    console.log('[SVN FileHistoryView] Status hash changed, will retry to check for stabilization');
+                    lastDiffLength = currentDiffLength;
+                    continue;
+                } else {
+                    // File is consistently modified with no recent status change - no need to retry
+                    console.log('[SVN FileHistoryView] File consistently modified with stable status, no retry needed');
+                    return statusData;
+                }
+            }
+            
+            // For retries, check if status or diff length has stabilized
+            if (attempt > 0) {
+                // If status changed from the original, we found the update
+                if (newHash !== currentHash) {
+                    console.log(`[SVN FileHistoryView] Status change detected on retry ${attempt}`);
+                    return statusData;
+                }
+                
+                // If file is no longer modified, return immediately
+                if (!isModified) {
+                    console.log(`[SVN FileHistoryView] File no longer modified on attempt ${attempt}, returning status`);
+                    return statusData;
+                }
+                
+                // If diff length hasn't changed between attempts, the file is stable
+                if (lastDiffLength !== null && currentDiffLength === lastDiffLength) {
+                    console.log(`[SVN FileHistoryView] Diff stable across attempts (${currentDiffLength} chars), returning status`);
+                    return statusData;
+                }
+                
+                lastDiffLength = currentDiffLength;
             }
             
             // If we're on the last retry, return what we got
             if (attempt === maxRetries) {
                 console.log(`[SVN FileHistoryView] Final attempt ${attempt}, returning current status`);
-                return statusData;
-            }
-            
-            // For middle attempts, if status hasn't changed and file is not modified, we can return early
-            if (attempt > 0 && !isModified) {
-                console.log(`[SVN FileHistoryView] File no longer modified on attempt ${attempt}, returning status`);
                 return statusData;
             }
         }
@@ -816,33 +1118,259 @@ export class FileHistoryView extends ItemView {
 
     /**
      * Check if file appears modified based on status data
-     */
-    private isFileModifiedFromStatus(statusData: any): boolean {
+     */    private async isFileModifiedFromStatus(statusData: any): Promise<boolean> {
         if (!statusData.isWorkingCopy || !Array.isArray(statusData.status)) {
             return false;
         }
         
         // Check if any status indicates modification
-        return statusData.status.some((item: any) => 
+        const hasModifiedStatus = statusData.status.some((item: any) => 
             item.status && (item.status.includes('M') || item.status.includes('A') || item.status.includes('D'))
         );
-    }
-    
-    /**
+          // If the status shows modified ('M'), double-check with diff to see if there are actual changes
+        if (hasModifiedStatus && this.currentFile) {
+            const modifiedItem = statusData.status.find((item: any) => 
+                item.status && item.status.includes('M') &&
+                (item.filePath.includes(this.currentFile!.name) || 
+                 item.filePath.endsWith(this.currentFile!.path))
+            );
+            
+            if (modifiedItem) {
+                try {
+                    console.log(`[SVN FileHistoryView] Checking diff for potentially reverted file: ${this.currentFile.path}`);
+                    const diff = await this.svnClient.getDiff(this.currentFile.path);
+                    const hasActualChanges = diff.trim().length > 0;
+                    console.log(`[SVN FileHistoryView] Diff check result: hasChanges=${hasActualChanges}, diffLength=${diff.length}`);
+                    // If diff is empty, the file was reverted to original content
+                    return hasActualChanges;
+                } catch (error) {
+                    console.error('[SVN FileHistoryView] Error checking diff for modified file:', error);
+                    // If we can't get diff, assume there are changes to be safe
+                    return true;
+                }
+            }
+        }
+        
+        return hasModifiedStatus;
+    }    /**
      * Calculate status hash from raw data (for direct status updates)
-     */
-    private calculateStatusHashFromData(data: { isWorkingCopy: boolean, status: any[], info: any }): string {
+     */    private calculateStatusHashFromData(data: { isWorkingCopy: boolean, status: any[], info: any }): string {
+        // More robust file matching - try multiple approaches
+        const currentFilePath = this.currentFile?.path || '';
+        const currentFileName = this.currentFile?.name || '';
+        
+        console.log('[SVN FileHistoryView] Looking for file status:', {
+            currentFilePath,
+            currentFileName,
+            availableFiles: data.status.map(item => item.filePath)
+        });
+        
+        // Try different matching strategies
+        let currentFileStatus = data.status.find(item => {
+            const itemPath = item.filePath;
+            return itemPath === currentFilePath || 
+                   itemPath.endsWith('/' + currentFileName) ||
+                   itemPath.endsWith('\\' + currentFileName) ||
+                   itemPath.includes(currentFileName);
+        });
+        
+        // If we still haven't found it, try normalizing paths
+        if (!currentFileStatus && currentFilePath) {
+            const normalizedPath = currentFilePath.replace(/\\/g, '/');
+            currentFileStatus = data.status.find(item => {
+                const normalizedItemPath = item.filePath.replace(/\\/g, '/');
+                return normalizedItemPath === normalizedPath ||
+                       normalizedItemPath.endsWith('/' + currentFileName) ||
+                       normalizedPath.endsWith(normalizedItemPath) ||
+                       normalizedItemPath.endsWith(normalizedPath);
+            });
+        }
+        
         const statusData = {
             isWorkingCopy: data.isWorkingCopy,
             revision: data.info?.revision,
             author: data.info?.lastChangedAuthor,
             date: data.info?.lastChangedDate,
-            fileStatus: data.status.find(item => 
-                item.filePath.includes(this.currentFile?.name || '') || 
-                item.filePath.endsWith(this.currentFile?.path || '')
-            )?.status
+            // Include file path to make hash more specific and stable
+            filePath: currentFilePath,
+            // Include the full status object, not just the status string
+            fileStatus: currentFileStatus?.status,
+            fileStatusPath: currentFileStatus?.filePath,
+            // Include any additional status flags
+            fileModified: currentFileStatus?.modified,
+            fileConflicted: currentFileStatus?.conflicted,
+            // Include status array length to detect changes
+            totalStatusItems: data.status.length,
+            // Include a summary of all status items for better change detection
+            allStatuses: data.status.map(item => ({ path: item.filePath, status: item.status })),
+            // Add a stability check: hash changes based on actual status content
+            statusChecksum: this.calculateStatusChecksum(currentFileStatus, data.status.length)
         };
         
-        return JSON.stringify(statusData);
+        console.log('[SVN FileHistoryView] Calculating status hash with data:', {
+            currentFileStatus: currentFileStatus || 'none',
+            totalItems: data.status.length,
+            filePath: currentFilePath,
+            foundFileStatus: !!currentFileStatus,
+            fileStatusString: currentFileStatus?.status,
+            statusChecksum: statusData.statusChecksum
+        });
+        
+        const hash = JSON.stringify(statusData);
+        console.log('[SVN FileHistoryView] Generated status hash length:', hash.length, 'includes file status:', !!currentFileStatus);
+        
+        return hash;
+    }
+
+    /**
+     * Calculate a checksum based on the actual file status to ensure changes are detected
+     */
+    private calculateStatusChecksum(fileStatus: any, totalItems: number): string {
+        if (!fileStatus) {
+            return `no-status-${totalItems}`;
+        }
+        
+        // Include key status properties that would change
+        const checksumData = {
+            status: fileStatus.status,
+            path: fileStatus.filePath,
+            modified: fileStatus.modified,
+            conflicted: fileStatus.conflicted,
+            totalItems,
+            // Add current time factor to detect real-time changes
+            timeSlice: Math.floor(Date.now() / 5000) // 5-second windows
+        };
+        
+        return JSON.stringify(checksumData);
+    }
+
+    /**
+     * Analyze the type of changes in a diff to determine if they're substantial or just whitespace
+     */
+    private analyzeDiffChanges(diff: string): { type: string, isWhitespaceOnly: boolean, description: string } {
+        console.log('[SVN FileHistoryView] Analyzing diff changes, input length:', diff.length);
+        
+        if (!diff || diff.trim().length === 0) {
+            return { type: 'none', isWhitespaceOnly: false, description: 'No changes' };
+        }
+        
+        // Split diff into lines and analyze changes
+        const lines = diff.split('\n');
+        const changeLines = lines.filter(line => line.startsWith('+') || line.startsWith('-'));
+        
+        console.log('[SVN FileHistoryView] Diff analysis:', {
+            totalLines: lines.length,
+            changeLines: changeLines.length,
+            sampleChangeLines: changeLines.slice(0, 5)
+        });
+        
+        if (changeLines.length === 0) {
+            return { type: 'metadata', isWhitespaceOnly: false, description: 'Metadata changes only' };
+        }
+        
+        // Analyze the actual content changes
+        let hasContentChanges = false;
+        let hasWhitespaceChanges = false;
+        let hasLineEndingChanges = false;
+        
+        for (const line of changeLines) {
+            if (line.startsWith('+++') || line.startsWith('---')) continue;
+            
+            const content = line.substring(1); // Remove +/- prefix
+            const trimmedContent = content.trim();
+            
+            if (trimmedContent.length === 0) {
+                // This is a whitespace-only or empty line change
+                hasWhitespaceChanges = true;
+            } else if (content !== trimmedContent) {
+                // This line has leading/trailing whitespace changes
+                hasWhitespaceChanges = true;
+                
+                // Check if there's also content changes
+                const oppositePrefix = line.startsWith('+') ? '-' : '+';
+                const oppositeLine = changeLines.find(l => 
+                    l.startsWith(oppositePrefix) && l.substring(1).trim() === trimmedContent
+                );
+                
+                if (!oppositeLine) {
+                    hasContentChanges = true;
+                }
+            } else {
+                // This is a real content change
+                hasContentChanges = true;
+            }
+        }
+        
+        // Detect line ending changes by looking for lines that differ only in invisible characters
+        const addedLines = changeLines.filter(l => l.startsWith('+')).map(l => l.substring(1));
+        const removedLines = changeLines.filter(l => l.startsWith('-')).map(l => l.substring(1));
+        
+        if (addedLines.length === removedLines.length) {            const hasLineEndingDifferences = addedLines.some((added, index) => {
+                const removed = removedLines[index];
+                return !!(removed && added.trim() === removed.trim() && added !== removed);
+            });
+            
+            if (hasLineEndingDifferences) {
+                hasLineEndingChanges = true;
+            }
+        }
+        // Determine the overall type of changes
+        const result = (() => {
+            if (hasContentChanges) {
+                return { 
+                    type: 'content', 
+                    isWhitespaceOnly: false, 
+                    description: 'Content changes with possible whitespace changes' 
+                };
+            } else if (hasLineEndingChanges) {
+                return { 
+                    type: 'line-endings', 
+                    isWhitespaceOnly: true, 
+                    description: 'Line ending differences only' 
+                };
+            } else if (hasWhitespaceChanges) {
+                return { 
+                    type: 'whitespace', 
+                    isWhitespaceOnly: true, 
+                    description: 'Whitespace changes only' 
+                };
+            } else {
+                return { 
+                    type: 'unknown', 
+                    isWhitespaceOnly: false, 
+                    description: 'Unknown change type' 
+                };
+            }
+        })();
+        
+        console.log('[SVN FileHistoryView] Diff analysis result:', {
+            hasContentChanges,
+            hasWhitespaceChanges,
+            hasLineEndingChanges,
+            result
+        });
+          return result;
+    }    /**
+     * Update the data store with fresh status data to prevent stale data issues
+     */
+    private async updateDataStoreWithFreshData(statusData: any): Promise<void> {
+        if (!this.currentFile) return;
+        
+        console.log('[SVN FileHistoryView] Clearing data store cache to force fresh data load');
+        
+        try {
+            // Access the data store through the UI controller
+            const dataStore = (this.uiController as any).dataStore;
+            if (dataStore && typeof dataStore.clearCache === 'function') {
+                // Clear the entire cache to force fresh data
+                dataStore.clearCache();
+                console.log('[SVN FileHistoryView] Data store cache cleared successfully');
+            } else {
+                console.warn('[SVN FileHistoryView] Could not access data store for cache clearing');
+            }
+        } catch (error) {
+            console.error('[SVN FileHistoryView] Error clearing data store cache:', error);
+            throw error;
+        }
     }
 }

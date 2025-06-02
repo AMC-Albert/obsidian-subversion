@@ -144,6 +144,7 @@ export class SVNUIController {
         });
 
         try {
+            // Refresh data for current file (including status)
             await this.dataStore.refreshFileData(this.currentFile, {
                 includeHistory: true,
                 includeStatus: true,
@@ -177,6 +178,13 @@ export class SVNUIController {
      */
     getCurrentState(): UIState {
         return { ...this.uiState };
+    }
+    /**
+     * Inject fresh file data into UI state
+     */
+    public setData(data: SVNFileData): void {
+        // Preserve loading flags
+        this.updateUIState({ data, isLoading: false, showLoading: false, error: null });
     }
 
     /**

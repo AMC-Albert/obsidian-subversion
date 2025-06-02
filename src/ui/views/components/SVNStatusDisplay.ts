@@ -60,7 +60,6 @@ export class SVNStatusDisplay {
                 console.log('SVNStatusDisplay: svnInfo type:', typeof svnInfo);
                 console.log('SVNStatusDisplay: lastChangedRev:', svnInfo?.lastChangedRev);
             }
-
             // Get file status
             const statusArray = await this.svnClient.getStatus(currentFile.path);
             const statusTextEl = statusContainer.createEl('span', { cls: 'svn-status-text' });
@@ -81,29 +80,38 @@ export class SVNStatusDisplay {
                 } else {
                     const statusCode = fileStatus.status.charAt(0);
                     
-                    switch (statusCode) {
-                        case 'M':
+                    // Special handling for 'M' status - check if there are actual content differences
+                    if (statusCode === 'M') {
+                        const hasActualChanges = await this.hasActualContentChanges(currentFile.path);
+                        if (hasActualChanges) {
                             statusTextEl.setText('Modified');
                             statusTextEl.addClass('svn-status-modified');
-                            break;
-                        case 'A':
-                            statusTextEl.setText('Added');
-                            statusTextEl.addClass('svn-status-added');
-                            break;
-                        case 'D':
-                            statusTextEl.setText('Deleted');
-                            statusTextEl.addClass('svn-status-deleted');
-                            break;                        case '?':
-                            statusTextEl.setText('Not tracked');
-                            statusTextEl.addClass('svn-status-untracked');
-                            break;
-                        case 'C':
-                            statusTextEl.setText('Conflicted');
-                            statusTextEl.addClass('svn-status-error');
-                            break;
-                        default:
+                        } else {
                             statusTextEl.setText('Up to date');
                             statusTextEl.addClass('svn-status-clean');
+                        }
+                    } else {
+                        switch (statusCode) {
+                            case 'A':
+                                statusTextEl.setText('Added');
+                                statusTextEl.addClass('svn-status-added');
+                                break;
+                            case 'D':
+                                statusTextEl.setText('Deleted');
+                                statusTextEl.addClass('svn-status-deleted');
+                                break;
+                            case '?':
+                                statusTextEl.setText('Not tracked');
+                                statusTextEl.addClass('svn-status-untracked');
+                                break;
+                            case 'C':
+                                statusTextEl.setText('Conflicted');
+                                statusTextEl.addClass('svn-status-error');
+                                break;
+                            default:
+                                statusTextEl.setText('Up to date');
+                                statusTextEl.addClass('svn-status-clean');
+                        }
                     }
                 }
             }
@@ -114,6 +122,25 @@ export class SVNStatusDisplay {
                 text: 'Error getting status',
                 cls: 'svn-status-text svn-status-error'
             });
+        }
+    }
+    /**
+     * Check if a file that appears as 'modified' in SVN status actually has content changes
+     * by using svn diff to compare against the repository version
+     */
+    private async hasActualContentChanges(filePath: string): Promise<boolean> {
+        try {
+            const diff = await this.svnClient.getDiff(filePath);
+            const hasChanges = diff.trim().length > 0;
+            // Only log if there's a discrepancy (status shows modified but no diff)
+            if (!hasChanges) {
+                console.log(`[SVNStatusDisplay] File ${filePath} shows as modified but has no diff content - likely reverted`);
+            }
+            return hasChanges;
+        } catch (error) {
+            console.error('SVNStatusDisplay: Error checking for actual changes:', error);
+            // If we can't get diff, assume there are changes to be safe
+            return true;
         }
     }
 

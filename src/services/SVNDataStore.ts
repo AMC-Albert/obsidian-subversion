@@ -31,6 +31,8 @@ export class SVNDataStore {
     private dataCache = new Map<string, SVNFileData>();
     private loadingPromises = new Map<string, Promise<SVNFileData>>();
     private subscribers = new Map<string, Set<(data: SVNFileData) => void>>();
+    // Store direct status overrides to ensure fresh data is used
+    private directStatusMap = new Map<string, SvnStatus[]>();
     private lastRefreshTime = new Map<string, number>();
     private refreshThrottleMs = 200; // Minimum time between refreshes for same file
 
@@ -180,9 +182,15 @@ export class SVNDataStore {
                 this.notifySubscribers(filePath, finalData);
                 return finalData;
             }            // Load additional data based on options
-            const statusPromise = isFileInSvn && options.includeStatus !== false 
-                ? this.svnClient.getStatus(filePath).catch(() => [])
-                : Promise.resolve([]);
+            // Use direct status override if available to prevent stale data
+            let statusPromise: Promise<SvnStatus[]>;
+            if (this.directStatusMap.has(filePath)) {
+                statusPromise = Promise.resolve(this.directStatusMap.get(filePath)!);
+            } else if (isFileInSvn && options.includeStatus !== false) {
+                statusPromise = this.svnClient.getStatus(filePath).catch(() => []);
+            } else {
+                statusPromise = Promise.resolve([]);
+            }
 
             const infoPromise = isFileInSvn && options.includeInfo !== false
                 ? this.svnClient.getInfo(filePath).catch(() => null)

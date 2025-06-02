@@ -227,20 +227,30 @@ export class SVNClient {
         } catch (error) {
             throw new Error(`Failed to revert file: ${error.message}`);
         }
-    }
-
-    async getStatus(path?: string): Promise<SvnStatus[]> {
+    }    async getStatus(path?: string): Promise<SvnStatus[]> {
         try {
             let workingCopyRoot: string | null;
             let targetPath: string;
+            
+            console.log('[SVN Client] getStatus called with path:', path);
             
             if (path) {
                 const absolutePath = this.resolveAbsolutePath(path);
                 workingCopyRoot = this.findSvnWorkingCopy(absolutePath);
                 targetPath = absolutePath;
+                console.log('[SVN Client] Resolved paths:', {
+                    originalPath: path,
+                    absolutePath,
+                    workingCopyRoot,
+                    targetPath
+                });
             } else {
                 workingCopyRoot = this.findSvnWorkingCopy(this.vaultPath);
                 targetPath = '';
+                console.log('[SVN Client] Using vault path:', {
+                    vaultPath: this.vaultPath,
+                    workingCopyRoot
+                });
             }
             
             if (!workingCopyRoot) {
@@ -250,9 +260,28 @@ export class SVNClient {
             const command = targetPath ? 
                 `${this.svnPath} status "${targetPath}"` : 
                 `${this.svnPath} status`;
+            
+            console.log('[SVN Client] Executing command:', {
+                command,
+                cwd: workingCopyRoot
+            });
+            
             const { stdout } = await execPromise(command, { cwd: workingCopyRoot });
-            return this.parseStatus(stdout);
+            
+            console.log('[SVN Client] Raw status output:', {
+                stdout: stdout.substring(0, 200) + (stdout.length > 200 ? '...' : ''),
+                outputLength: stdout.length
+            });
+            
+            const result = this.parseStatus(stdout);
+            console.log('[SVN Client] Parsed status result:', {
+                resultCount: result.length,
+                results: result
+            });
+            
+            return result;
         } catch (error) {
+            console.error('[SVN Client] getStatus error:', error);
             throw new Error(`Failed to get SVN status: ${error.message}`);
         }
     }
