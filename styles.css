@@ -101,7 +101,7 @@
     display: flex;
     align-items: flex-start;
     gap: var(--size-4-2);
-    padding-right: calc(var(--size-4-4) + var(--size-4-2)); /* Space for actions - reduced since one button removed */
+    padding-right: calc(var(--size-4-4) + var(--size-4-2));
 }
 
 .svn-entry-info {

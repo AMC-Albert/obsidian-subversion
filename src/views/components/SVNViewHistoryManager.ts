@@ -68,16 +68,11 @@ export class SVNViewHistoryManager {
 			// Show interactive file state UI in content area since status area only shows status
 			this.fileStateRenderer.renderNotInSvn(container, currentFile);
 			return;
-		}
-		// Check if file is added but not committed
+		}		// Check if file is added but not committed
 		const isAddedNotCommitted = data.status.some((s: any) => s.status === 'A');
 		if (isAddedNotCommitted) {
-			// Don't render file state UI here - that's handled by the status area
-			// Instead, show a simple message about the file being added
-			container.createEl('p', { 
-				text: 'This file has been added to version control but not yet committed. Use the commit functionality to save your changes.',
-				cls: 'svn-added-message'
-			});
+			// Show interactive file state UI in content area since status area only shows status
+			this.fileStateRenderer.renderAddedButNotCommitted(container, currentFile);
 			return;
 		}
 

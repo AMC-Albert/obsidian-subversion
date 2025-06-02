@@ -11,11 +11,11 @@ export class SVNConstants {
 	static readonly ICONS = {
 		// 📁 File Status Icons - Used for actual SVN file states
 		MODIFIED: '🔄', // Files with local changes
-		ADDED: '➕', // Files staged for addition
-		DELETED: '➖', // Files staged for deletion
+		ADDED: '+', // Files staged for addition
+		DELETED: '–', // Files staged for deletion
 		REPLACED: '🔄', // Files that were replaced
 		CONFLICTED: '⚠️', // Files with merge conflicts
-		UNVERSIONED: '❓', // Files not tracked by SVN
+		UNVERSIONED: '?', // Files not tracked by SVN
 		MISSING: '❌', // Files missing from working copy
 		UP_TO_DATE: '✅', // Files with no changes
 		

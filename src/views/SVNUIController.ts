@@ -94,6 +94,7 @@ export class SVNUIController {
 				}
 			}, 200);
 		}
+
 		// Subscribe to data updates
 		this.unsubscribeDataStore = this.dataStore.subscribe(file.path, (data) => {
 			console.log('[SVN UIController] Data subscription callback triggered:', {
@@ -132,7 +133,9 @@ export class SVNUIController {
 				});
 			}
 		}
-	}    /**
+	}
+	
+	/**
 	 * Refresh data for current file
 	 */
 	async refreshCurrentFile(): Promise<void> {
@@ -185,6 +188,7 @@ export class SVNUIController {
 	getCurrentState(): UIState {
 		return { ...this.uiState };
 	}
+	
 	/**
 	 * Inject fresh file data into UI state
 	 */

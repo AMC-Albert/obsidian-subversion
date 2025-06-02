@@ -57,7 +57,7 @@ export class SVNFileStateRenderer {
 		});
 		const settingControl = settingItem.createEl('div', { cls: 'setting-item-control' });
 		new ButtonComponent(settingControl)
-			.setButtonText('Commit file')
+			.setButtonText('Commit')
 			.setClass('mod-cta')
 			.onClick(() => {
 				const modal = new CommitModal(
