@@ -31,28 +31,16 @@ export class SVNToolbar {
 		const toolbarEl = container.createEl('div', { cls: 'nav-buttons-container' });
 
 		new ButtonComponent(toolbarEl)
+			.setIcon('plus')
+			.setTooltip('Add file to version control')
+			.setClass('clickable-icon')
+			.onClick(() => this.fileActions.addFile(currentFile));
+
+		new ButtonComponent(toolbarEl)
 			.setIcon('check')
 			.setTooltip('Commit file')
 			.setClass('clickable-icon')
 			.onClick(() => this.fileActions.quickCommit(currentFile));
-
-		new ButtonComponent(toolbarEl)
-			.setIcon('file-diff')
-			.setTooltip('Show diff')
-			.setClass('clickable-icon')
-			.onClick(() => this.fileActions.showCurrentDiff(currentFile));
-
-		new ButtonComponent(toolbarEl)
-			.setIcon('eye')
-			.setTooltip('Show blame/annotate')
-			.setClass('clickable-icon')
-			.onClick(() => this.fileActions.showBlame(currentFile));
-
-		new ButtonComponent(toolbarEl)
-			.setIcon('info')
-			.setTooltip('Show file info')
-			.setClass('clickable-icon')
-			.onClick(() => this.fileActions.toggleInfoDisplay());
 
 		new ButtonComponent(toolbarEl)
 			.setIcon('undo')
@@ -61,10 +49,24 @@ export class SVNToolbar {
 			.onClick(() => this.fileActions.revertFile(currentFile));
 
 		new ButtonComponent(toolbarEl)
+			.setIcon('file-diff')
+			.setTooltip('Show diff')
+			.setClass('clickable-icon')
+			.onClick(() => this.fileActions.showCurrentDiff(currentFile));
+
+		new ButtonComponent(toolbarEl)
+			.setIcon('info')
+			.setTooltip('Show file info')
+			.setClass('clickable-icon')
+			.onClick(() => this.fileActions.toggleInfoDisplay());
+
+		new ButtonComponent(toolbarEl)
 			.setIcon('trash')
 			.setTooltip('Remove file from version control')
 			.setClass('clickable-icon')
-			.onClick(() => this.fileActions.removeFromSvn(currentFile));        new ButtonComponent(toolbarEl)
+			.onClick(() => this.fileActions.removeFromSvn(currentFile));
+
+		new ButtonComponent(toolbarEl)
 			.setIcon('refresh-cw')
 			.setTooltip('Refresh history')
 			.setClass('clickable-icon')

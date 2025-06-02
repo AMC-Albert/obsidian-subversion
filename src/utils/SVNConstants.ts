@@ -20,10 +20,10 @@ export class SVNConstants {
 		UP_TO_DATE: '✅', // Files with no changes
 		
 		// 🚀 Special Status Icons - Used for system states
-		NOT_IN_WORKING_COPY: '📁',  // File/folder not in SVN repository
+		NOT_IN_WORKING_COPY: '▢', // File/folder not in SVN repository
 		ERROR: '❌', // Error states (failed operations)
 		LOADING: '⏳', // Loading/processing states
-		UNKNOWN: '❔' // Unknown or unexpected states
+		UNKNOWN: '?' // Unknown or unexpected states
 	} as const;
 
 	/**

@@ -29,9 +29,9 @@
 /* Status display icons */
 .svn-status-icon {
     display: inline-block;
-    width: 1.5em;
+    width: 1.2em;
     text-align: center;
-    margin-right: 1em;
+    margin-right: 0.7em;
 }
 
 .svn-status-label {
@@ -246,59 +246,6 @@
     font-size: var(--font-ui-small);
     color: var(--text-muted);
     flex: 1;
-}
-
-/* Blame Modal Styles */
-.svn-blame-container {
-    max-height: 70vh;
-    overflow-y: auto;
-    font-family: var(--font-monospace);
-    font-size: var(--font-text-size);
-    border: 1px solid var(--background-modifier-border);
-    border-radius: var(--radius-s);
-}
-
-.svn-blame-header {
-    display: grid;
-    grid-template-columns: 60px 100px 50px 1fr;
-    gap: var(--size-4-2);
-    padding: var(--size-4-2);
-    background: var(--background-modifier-header);
-    font-weight: var(--font-weight-medium);
-    border-bottom: 1px solid var(--background-modifier-border);
-    position: sticky;
-    top: 0;
-}
-
-.svn-blame-row {
-    display: grid;
-    grid-template-columns: 60px 100px 50px 1fr;
-    gap: var(--size-4-2);
-    padding: var(--size-4-1) var(--size-4-2);
-    border-bottom: 1px solid var(--background-modifier-border-hover);
-}
-
-.svn-blame-row:hover {
-    background: var(--background-modifier-hover);
-}
-
-.svn-blame-col-rev {
-    color: var(--text-accent);
-    font-weight: var(--font-weight-medium);
-}
-
-.svn-blame-col-author {
-    color: var(--text-muted);
-}
-
-.svn-blame-col-line {
-    color: var(--text-faint);
-    text-align: right;
-}
-
-.svn-blame-col-content {
-    white-space: pre;    overflow: hidden;
-    text-overflow: ellipsis;
 }
 
 /* Info Panel Styles */

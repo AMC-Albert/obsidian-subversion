@@ -121,7 +121,7 @@ export class SVNRepositoryHandler {
             const newRepoItem = container.createEl('div', { cls: 'setting-item' });
             const newRepoInfo = newRepoItem.createEl('div', { cls: 'setting-item-info' });
             newRepoInfo.createEl('div', { 
-                text: 'Create New Repository',
+                text: 'Create new repository',
                 cls: 'setting-item-name'
             });
             newRepoInfo.createEl('div', { 
@@ -139,7 +139,7 @@ export class SVNRepositoryHandler {
             const checkoutItem = container.createEl('div', { cls: 'setting-item' });
             const checkoutInfo = checkoutItem.createEl('div', { cls: 'setting-item-info' });
             checkoutInfo.createEl('div', { 
-                text: 'Checkout Existing Repository',
+                text: 'Checkout existing repository',
                 cls: 'setting-item-name'
             });
             checkoutInfo.createEl('div', { 

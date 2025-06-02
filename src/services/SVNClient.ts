@@ -1,6 +1,6 @@
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import { join, dirname } from 'path';
+import { join, dirname, isAbsolute } from 'path'; // Added isAbsolute
 import { existsSync } from 'fs';
 import { SvnLogEntry, SvnStatus, SvnCommandResult, SvnBlameEntry, SvnInfo } from '../types';
 import { SvnError, SvnNotInstalledError, NotWorkingCopyError, SvnCommandError } from '../utils/errors';
@@ -24,11 +24,14 @@ export class SVNClient {
 		return this.vaultPath;
 	}
 
-	private resolveAbsolutePath(relativePath: string): string {
+	private resolveAbsolutePath(filePath: string): string {
+		if (isAbsolute(filePath)) {
+			return filePath; // Return as-is if already absolute
+		}
 		if (!this.vaultPath) {
 			throw new Error('Vault path not set');
 		}
-		return join(this.vaultPath, relativePath);
+		return join(this.vaultPath, filePath);
 	}
 
 	private findSvnWorkingCopy(absolutePath: string): string | null {
@@ -112,103 +115,98 @@ export class SVNClient {
 	}
 
 	async commitFile(filePath: string, message: string): Promise<void> {
-		try {
-			const absolutePath = this.resolveAbsolutePath(filePath);
-			const workingCopyRoot = this.findSvnWorkingCopy(absolutePath);
-			
-			if (!workingCopyRoot) {
-				throw new Error('File is not in an SVN working copy');
-			}
-			
-			// First add the file if it's not already added
-			try {
-				await execPromise(`${this.svnPath} add "${absolutePath}"`, { cwd: workingCopyRoot });
-			} catch {
-				// File might already be added, continue
-			}
+		const fullPath = this.resolveAbsolutePath(filePath);
+		console.log('[SVN Client] commitFile called with:', { fullPath, message });
 
-			// Check if we need to commit parent directories first
-			await this.commitParentDirectoriesIfNeeded(absolutePath, workingCopyRoot, message);
-			
-			// Try to commit the file
-			try {
-				const command = `${this.svnPath} commit -m "${message}" "${absolutePath}"`;
-				await execPromise(command, { cwd: workingCopyRoot });
-			} catch (commitError) {
-				// Check if this is an "out of date" error
-				const errorMsg = commitError.message.toLowerCase();
-				if (errorMsg.includes('is out of date') || 
-					errorMsg.includes('e155011') || 
-					errorMsg.includes('e160028')) {
-					
-					// Update the file first, then try to commit again
-					await this.updateFileAndRetryCommit(absolutePath, workingCopyRoot, message);
-				} else {
-					// Some other error, re-throw it
-					throw commitError;
-				}
+		try {
+			// Ensure parent directories are versioned before committing
+			await this.ensureParentDirectoriesAreVersioned(fullPath);
+
+			const command = `svn commit -m "${message}" "${fullPath}"`;
+			console.log('[SVN Client] Executing command:', { command });
+			const { stdout, stderr } = await execPromise(command);
+
+			if (stderr) {
+				console.error(`[SVN Client] Error committing file ${fullPath}: ${stderr}`);
+				throw new Error(`Failed to commit file: ${stderr}`);
 			}
+			console.log(`[SVN Client] File ${fullPath} committed successfully: ${stdout}`);
 		} catch (error) {
-			throw new Error(`Failed to commit file: ${error.message}`);
+			console.error(`[SVN Client] Exception in commitFile for ${fullPath}: ${error}`);
+			throw error; // Re-throw the original error for higher-level handling
 		}
 	}
 
-	private async updateFileAndRetryCommit(absolutePath: string, workingCopyRoot: string, message: string): Promise<void> {
-		try {
-			// Update the file to get the latest version
-			const updateCommand = `${this.svnPath} update "${absolutePath}"`;
-			const { stdout } = await execPromise(updateCommand, { cwd: workingCopyRoot });
-			
-			// Check if there are conflicts after update
-			if (stdout.includes('C ') || stdout.includes('Conflict')) {
-				throw new Error('File has conflicts after update. Please resolve conflicts manually and try again.');
-			}
-			
-			// If update was successful and no conflicts, try to commit again
-			const commitCommand = `${this.svnPath} commit -m "${message}" "${absolutePath}"`;
-			await execPromise(commitCommand, { cwd: workingCopyRoot });
-			
-		} catch (error) {
-			if (error.message.includes('File has conflicts')) {
-				throw error; // Re-throw conflict errors as-is
-			}
-			throw new Error(`Failed to update and commit file: ${error.message}`);
-		}
-	}
+	async ensureParentDirectoriesAreVersioned(filePath: string): Promise<void> {
+		let parentDir = dirname(filePath);
+		const repoRoot = this.findSvnWorkingCopy(filePath);
 
-	private async commitParentDirectoriesIfNeeded(absolutePath: string, workingCopyRoot: string, message: string): Promise<void> {
-		const path = require('path');
-		
-		let currentDir = path.dirname(absolutePath);
-		const dirsToCommit: string[] = [];
-		
-		// Walk up the directory tree and find directories that are added but not committed
-		while (currentDir !== workingCopyRoot && currentDir !== path.dirname(currentDir)) {
-			try {
-				// Check if this directory is added but not committed
-				const statusCommand = `${this.svnPath} status "${currentDir}"`;
-				const { stdout } = await execPromise(statusCommand, { cwd: workingCopyRoot });
-				
-				// If status shows 'A' (added), it needs to be committed
-				if (stdout.trim().startsWith('A')) {
-					dirsToCommit.unshift(currentDir); // Add to beginning so we commit parent first
-				}
-				
-				currentDir = path.dirname(currentDir);
-			} catch (error) {
-				// Directory might not be in working copy, stop here
+		if (!repoRoot) {
+			console.warn(`[SVN Client] Could not determine repository root for ${filePath}. Skipping parent directory check.`);
+			return;
+		}
+
+		const pathQueue: string[] = [];
+
+		// Traverse up from the file's parent directory to the repository root
+		while (parentDir && parentDir.startsWith(repoRoot) && parentDir !== repoRoot) {
+			const parentStatus = await this.getStatus(parentDir);
+			// Check if the directory itself is unversioned or missing
+			const isUnversionedOrMissing = parentStatus.some(s => s.filePath === parentDir && (s.status === '?' || s.status === '!'));
+			const isVersioned = parentStatus.length > 0 && !isUnversionedOrMissing;
+
+			if (!isVersioned) {
+				// Add to the beginning of the queue to process deepest paths first when adding
+				pathQueue.unshift(parentDir);
+			}
+			
+			const grandParentDir = dirname(parentDir);
+			if (grandParentDir === parentDir) { // Reached the top or an invalid path
 				break;
 			}
+			parentDir = grandParentDir;
 		}
-		
-		// Commit directories in order (parent first)
-		for (const dir of dirsToCommit) {
+
+		// Add directories from the queue, starting from the highest unversioned parent
+		for (const dirToAdd of pathQueue) {
+			console.log(`[SVN Client] Parent directory ${dirToAdd} is not versioned. Adding with --depth empty.`);
 			try {
-				const commitCommand = `${this.svnPath} commit -m "${message}" --depth=empty "${dir}"`;
-				await execPromise(commitCommand, { cwd: workingCopyRoot });
-			} catch (error) {
-				// If commit fails, it might already be committed or there might be another issue
-				console.warn(`Failed to commit directory ${dir}:`, error.message);
+				await this.add(dirToAdd, true); // true for --depth empty
+			} catch (addError) {
+				console.error(`[SVN Client] Failed to add parent directory ${dirToAdd}: ${addError}`);
+				// Decide if we should throw or try to continue. For now, let's throw.
+				throw new Error(`Failed to add parent directory ${dirToAdd} during pre-commit check: ${addError}`);
+			}
+		}
+	}
+
+	async add(filePath: string, depthEmpty: boolean = false): Promise<void> {
+		const fullPath = this.resolveAbsolutePath(filePath);
+		console.log('[SVN Client] add called with:', { fullPath, depthEmpty });
+		const depthOption = depthEmpty ? '--depth empty ' : '';
+		const command = `svn add ${depthOption}"${fullPath}"`;
+		console.log('[SVN Client] Executing command:', { command });
+		try {
+			const { stdout, stderr } = await execPromise(command);
+			if (stderr) {
+				// Ignore "already under version control" error for adds
+				if (!stderr.includes("is already under version control")) {
+					console.error(`[SVN Client] Error adding file/directory ${fullPath}: ${stderr}`);
+					throw new Error(`Failed to add file/directory: ${stderr}`);
+				} else {
+					console.log(`[SVN Client] ${fullPath} is already under version control. No action needed.`);
+				}
+			}
+			if (stdout) {
+				console.log(`[SVN Client] ${fullPath} added successfully: ${stdout}`);
+			}
+		} catch (error) {
+			console.error(`[SVN Client] Exception in add for ${fullPath}: ${error}`);
+			// Check if the error is because the file is already versioned
+			if (error.message && error.message.includes("is already under version control")) {
+				console.log(`[SVN Client] ${fullPath} is already under version control. No action needed.`);
+			} else {
+				throw error; // Re-throw other errors
 			}
 		}
 	}
@@ -666,9 +664,27 @@ export class SVNClient {
 			const command = `svnadmin create "${repoPath}"`;
 			await execPromise(command);
 
-			console.log(`SVN repository created at: ${repoPath}`);
-		} catch (error) {
+			console.log(`SVN repository created at: ${repoPath}`);		} catch (error) {
 			throw new Error(`Failed to create SVN repository: ${error.message}`);
 		}
+	}	/**
+	 * Compare two file paths for equality, handling different path separators and relative/absolute paths
+	 */
+	comparePaths(path1: string, path2: string): boolean {
+		// Normalize both paths to absolute paths and standardize separators
+		const normalizedPath1 = this.resolveAbsolutePath(path1).replace(/\\/g, '/').toLowerCase();
+		const normalizedPath2 = this.resolveAbsolutePath(path2).replace(/\\/g, '/').toLowerCase();
+		
+		console.log(`[SVN] comparePaths: "${path1}" -> "${normalizedPath1}"`);
+		console.log(`[SVN] comparePaths: "${path2}" -> "${normalizedPath2}"`);
+		
+		// Direct comparison first
+		if (normalizedPath1 === normalizedPath2) {
+			console.log(`[SVN] comparePaths: Direct match - TRUE`);
+			return true;
+		}
+		
+		console.log(`[SVN] comparePaths: No direct match - FALSE`);
+		return false;
 	}
 }

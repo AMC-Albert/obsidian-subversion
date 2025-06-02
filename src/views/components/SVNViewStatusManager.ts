@@ -6,6 +6,7 @@ import { SVNStatusDisplay } from '.';
 import { SVNViewStateManager } from './SVNViewStateManager';
 import { SVNStatusUtils } from '../../utils/SVNStatusUtils';
 import { SVNConstants } from '../../utils/SVNConstants';
+import { SVNFileStateRenderer } from './SVNFileStateRenderer';
 
 /**
  * Manages status updates and display logic for the FileHistoryView
@@ -15,115 +16,134 @@ export class SVNViewStatusManager {
 	private svnClient: SVNClient;
 	private statusDisplay: SVNStatusDisplay;
 	private stateManager: SVNViewStateManager;
+	private fileStateRenderer: SVNFileStateRenderer;
+	private isRendering: boolean = false;
 
-	constructor(svnClient: SVNClient, statusDisplay: SVNStatusDisplay, stateManager: SVNViewStateManager) {
+	constructor(
+		svnClient: SVNClient,
+		statusDisplay: SVNStatusDisplay,
+		stateManager: SVNViewStateManager,
+		fileStateRenderer: SVNFileStateRenderer
+	) {
 		this.svnClient = svnClient;
 		this.statusDisplay = statusDisplay;
 		this.stateManager = stateManager;
+		this.fileStateRenderer = fileStateRenderer;
 	}
-
 	/**
 	 * Update status display section only
-	 */
-	async updateStatusDisplay(state: UIState, statusContainer: HTMLElement | null, currentFile: TFile | null): Promise<void> {
+	 */	async updateStatusDisplay(state: UIState, statusContainer: HTMLElement | null, currentFile: TFile | null): Promise<void> {
 		if (!statusContainer) return;
 		
-		// If we have fresh direct status data, override and render immediately
-		const protectionWindowMs = this.stateManager.getProtectionWindowMs();
-		if (this.stateManager.isWithinProtectionWindow()) {
-			statusContainer.empty();
-			const directData = this.stateManager.getLastDirectStatusData();
-			if (directData) {
-				this.renderStatusWithData(statusContainer, directData as any, currentFile);
+		// Prevent duplicate renders - if already rendering, skip
+		if (this.isRendering) {
+			console.log('[SVN ViewStatusManager] Already rendering, skipping duplicate update');
+			return;
+		}
+		
+		this.isRendering = true;
+		
+		try {
+			// If we have fresh direct status data, override and render immediately
+			const protectionWindowMs = this.stateManager.getProtectionWindowMs();
+			if (this.stateManager.isWithinProtectionWindow()) {
+				statusContainer.empty();
+				const directData = this.stateManager.getLastDirectStatusData();
+				if (directData) {
+					this.renderStatusWithData(statusContainer, directData as any, currentFile);
+				}
+				return;
 			}
-			return;
-		}
-		
-		// Preserve existing status during loading states to avoid flicker
-		if (state.showLoading && this.stateManager.getLastStatusHash() && this.stateManager.getLastStatusHash() !== 'no-data') {
-			return;
-		}
-		
-		// Calculate status hash to avoid unnecessary rebuilds
-		const currentStatusHash = this.stateManager.calculateStatusHash(state, currentFile?.path);
-		if (currentStatusHash === this.stateManager.getLastStatusHash()) {
-			return;
-		}
-		
-		statusContainer.empty();
-		if (state.data && !state.showLoading) {
-			this.renderStatusWithData(statusContainer, state.data, currentFile);
-		} else if (currentFile) {
-			this.statusDisplay.render(statusContainer, currentFile);
-		}
-		
-		// Only update the hash if we're not in a loading state
-		if (!state.showLoading) {
-			this.stateManager.setLastStatusHash(currentStatusHash);
+			
+			// Preserve existing status during loading states to avoid flicker
+			if (state.showLoading && this.stateManager.getLastStatusHash() && this.stateManager.getLastStatusHash() !== 'no-data') {
+				return;
+			}
+			
+			// Calculate status hash to avoid unnecessary rebuilds
+			const currentStatusHash = this.stateManager.calculateStatusHash(state, currentFile?.path);
+			if (currentStatusHash === this.stateManager.getLastStatusHash()) {
+				return;
+			}
+					statusContainer.empty();
+			if (state.data && !state.showLoading) {
+				// Always use renderStatusWithData when we have state data - it handles routing correctly
+				this.renderStatusWithData(statusContainer, state.data, currentFile);
+			} else if (currentFile && !state.showLoading) {
+				// Only fall back to direct SVNStatusDisplay when we have no state data AND not loading
+				console.log('[SVN ViewStatusManager] No state data available, falling back to direct SVNStatusDisplay');
+				this.statusDisplay.render(statusContainer, currentFile);
+			} else if (state.showLoading) {
+				// During loading, show a simple loading message instead of trying to render status
+				const loadingEl = statusContainer.createEl('span', { 
+					text: 'Loading...', 
+					cls: 'svn-status-loading' 
+				});
+			}
+			
+			// Only update the hash if we're not in a loading state
+			if (!state.showLoading) {
+				this.stateManager.setLastStatusHash(currentStatusHash);
+			}
+		} finally {
+			this.isRendering = false;
 		}
 	}
 	/**
 	 * Render status display with loaded data
 	 */
 	private renderStatusWithData(container: HTMLElement, data: SVNFileData, currentFile: TFile | null): void {
-		container.empty();
-		
+		// SVNFileStateRenderer and SVNStatusDisplay.render will handle emptying their container.
+
 		if (!data.isWorkingCopy) {
-			// Use the statusDisplay to show the "not in working copy" message with icon
-			this.statusDisplay.render(container, currentFile);
+			container.empty(); // Ensure clean for this specific message
+			const statusTextEl = container.createEl('span', { cls: 'svn-status-text' });
+			this.statusDisplay.createStatusWithIcon(statusTextEl, SVNConstants.ICONS.NOT_IN_WORKING_COPY, SVNConstants.MESSAGES.NOT_IN_WORKING_COPY, SVNConstants.CSS_CLASSES.WARNING);
 			return;
 		}
+		if (currentFile) {
+			console.log('[SVN ViewStatusManager] renderStatusWithData: Looking for file in status data:', {
+				currentFilePath: currentFile.path,
+				statusEntries: data.status?.map(item => ({ filePath: item.filePath, status: item.status })) || []
+			});
 
-		// Create status container with comprehensive revision info
-		const statusContainer = container.createEl('div', { cls: 'svn-status-container' });
-		
-		// Show current revision with full details
-		if (data.info && data.info.revision) {
-			const revisionEl = statusContainer.createEl('span', { 
-				cls: 'svn-status-revision'
-			});
-			
-			// Revision number with badge styling
-			revisionEl.createEl('span', { 
-				text: 'r' + data.info.revision,
-				cls: 'svn-revision-badge'
-			});
-			
-			// Author information
-			if (data.info.lastChangedAuthor) {
-				revisionEl.createEl('span', { 
-					text: ` by ${data.info.lastChangedAuthor}`,
-					cls: 'svn-author-info'
+			const fileStatusEntry = data.status?.find(item => {
+				const match = this.svnClient.comparePaths(item.filePath, currentFile.path);
+				console.log('[SVN ViewStatusManager] Comparing paths:', {
+					svnPath: item.filePath,
+					currentPath: currentFile.path,
+					match: match
 				});
-			}
-			
-			// Date information
-			if (data.info.lastChangedDate) {
-				const dateStr = new Date(data.info.lastChangedDate).toLocaleDateString();
-				revisionEl.createEl('span', { 
-					text: ` on ${dateStr}`,
-					cls: 'svn-date-info'
-				});
-			}
-		}		// Show file modification status
-		const statusTextEl = statusContainer.createEl('span', { cls: 'svn-status-text' });
-		
-		if (!data.status || data.status.length === 0) {
-			this.statusDisplay.createStatusWithIcon(statusTextEl, SVNConstants.ICONS.UP_TO_DATE, 'Up to date', 'svn-status-clean');
-		} else {
-			// Find status for current file
-			const fileStatus = data.status.find(item => 
-				item.filePath.includes(currentFile?.name || '') || 
-				item.filePath.endsWith(currentFile?.path || '')
-			);
-					if (!fileStatus) {
-				this.statusDisplay.createStatusWithIcon(statusTextEl, SVNConstants.ICONS.UP_TO_DATE, 'Up to date', 'svn-status-clean');
+				return match;
+			});
+
+			console.log('[SVN ViewStatusManager] File status entry found:', fileStatusEntry);			if (fileStatusEntry && fileStatusEntry.status === '?') {
+				// Unversioned file: show simple status message
+				console.log('[SVN ViewStatusManager] renderStatusWithData: Unversioned file status found in data, showing status message.');
+				container.empty();
+				const statusTextEl = container.createEl('span', { cls: 'svn-status-text' });
+				this.statusDisplay.createStatusWithIcon(statusTextEl, SVNConstants.ICONS.UNVERSIONED, 'Unversioned', SVNConstants.CSS_CLASSES.UNVERSIONED);
+				return;
 			} else {
-				const statusText = SVNStatusUtils.getStatusText(fileStatus.status);
-				const icon = SVNStatusUtils.getStatusIcon(fileStatus.status);
-				const cssClass = SVNStatusUtils.getStatusClass(fileStatus.status);
-				this.statusDisplay.createStatusWithIcon(statusTextEl, icon, statusText, cssClass);
+				// Versioned file (M, A, D, clean), or file not in status list (implies clean if other statuses exist)
+				// Delegate to SVNStatusDisplay to render revision and status.
+				// SVNStatusDisplay.render itself will handle emptying the container and also has a '?' check.
+				console.log('[SVN ViewStatusManager] renderStatusWithData: Versioned or clean file, delegating to SVNStatusDisplay.');
+				this.statusDisplay.render(container, currentFile);
+				return;
 			}
+		} else {
+			// No current file selected, but it's a working copy.
+			// Show a generic status for the repository.
+			container.empty(); // Ensure clean for this specific message
+			const statusTextEl = container.createEl('span', { cls: 'svn-status-text' });
+			if (!data.status || data.status.length === 0) {
+				this.statusDisplay.createStatusWithIcon(statusTextEl, SVNConstants.ICONS.UP_TO_DATE, SVNConstants.MESSAGES.UP_TO_DATE, SVNConstants.CSS_CLASSES.UP_TO_DATE);
+			} else {
+				// Display a generic message if there are statuses but no specific file is selected.
+				this.statusDisplay.createStatusWithIcon(statusTextEl, SVNConstants.ICONS.UP_TO_DATE, "Repository status (select a file for details)", SVNConstants.CSS_CLASSES.UP_TO_DATE);
+			}
+			return;
 		}
 	}
 

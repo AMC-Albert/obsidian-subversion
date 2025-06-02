@@ -1,5 +1,4 @@
-import { Notice, FileSystemAdapter } from 'obsidian';
-import { SVNClient } from '../services/SVNClient';
+import { Notice } from 'obsidian';
 import { CreateRepoModal } from '../modals';
 import type ObsidianSvnPlugin from '../main';
 
@@ -203,7 +202,9 @@ export function registerCommands(plugin: ObsidianSvnPlugin) {
 				new Notice(`Error: ${error.message}`);
 			}
 		}
-	});    plugin.addCommand({
+	});
+
+	plugin.addCommand({
 		id: 'svn-create-repository',
 		name: 'Create SVN repository',
 		callback: async () => {

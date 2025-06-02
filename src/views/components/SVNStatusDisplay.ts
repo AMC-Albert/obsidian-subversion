@@ -28,7 +28,8 @@ export class SVNStatusDisplay {
 		await this.renderStatusContent(statusEl, currentFile);
 	}    
 
-	private async renderStatusContent(statusEl: HTMLElement, currentFile: TFile): Promise<void> {		try {
+	private async renderStatusContent(statusEl: HTMLElement, currentFile: TFile): Promise<void> {
+		try {
 			// Check if file is in working copy
 			const isWorkingCopy = await this.svnClient.isWorkingCopy(currentFile.path);
 			console.log('[SVNStatusDisplay] isWorkingCopy check:', {
@@ -80,15 +81,19 @@ export class SVNStatusDisplay {
 			
 			// Get file status
 			const statusArray = await this.svnClient.getStatus(currentFile.path);
-			const statusTextEl = statusContainer.createEl('span', { cls: 'svn-status-text' });			if (!statusArray || statusArray.length === 0) {
+			const fileStatus = statusArray.find(item => 
+				item.filePath.includes(currentFile.name) || 
+				item.filePath.endsWith(currentFile.path)
+			);
+			if (fileStatus && fileStatus.status === '?') {
+				// If file is unversioned, do not show generic status (let file state renderer handle it)
+				return;
+			}
+			const statusTextEl = statusContainer.createEl('span', { cls: 'svn-status-text' });			
+			if (!statusArray || statusArray.length === 0) {
 				this.createStatusWithIcon(statusTextEl, SVNConstants.ICONS.UP_TO_DATE, SVNConstants.MESSAGES.UP_TO_DATE, SVNConstants.CSS_CLASSES.UP_TO_DATE);
 			} else {
 				// Find status for current file
-				const fileStatus = statusArray.find(item => 
-					item.filePath.includes(currentFile.name) || 
-					item.filePath.endsWith(currentFile.path)
-				);
-				
 				if (!fileStatus) {
 					this.createStatusWithIcon(statusTextEl, SVNConstants.ICONS.UP_TO_DATE, SVNConstants.MESSAGES.UP_TO_DATE, SVNConstants.CSS_CLASSES.UP_TO_DATE);
 				} else {

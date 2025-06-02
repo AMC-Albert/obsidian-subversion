@@ -94,9 +94,15 @@ export class SVNUIController {
 				}
 			}, 200);
 		}
-
 		// Subscribe to data updates
 		this.unsubscribeDataStore = this.dataStore.subscribe(file.path, (data) => {
+			console.log('[SVN UIController] Data subscription callback triggered:', {
+				filePath: file.path,
+				currentFilePath: this.currentFile?.path,
+				dataIsLoading: data.isLoading,
+				statusCount: data.status?.length || 0,
+				statusItems: data.status?.map(s => ({ path: s.filePath, status: s.status })) || []
+			});
 			// Only update if this is still the current file
 			if (this.currentFile?.path === file.path) {
 				this.updateUIState({

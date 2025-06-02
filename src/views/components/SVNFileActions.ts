@@ -1,7 +1,7 @@
 import { TFile, Notice, ItemView } from 'obsidian';
 import { SVNClient } from '../../services/SVNClient';
 import type ObsidianSvnPlugin from '../../main';
-import { CommitModal, ConfirmRevertModal, ConfirmRemoveModal, DiffModal, BlameModal } from '../../modals';
+import { CommitModal, ConfirmRevertModal, ConfirmRemoveModal, DiffModal } from '../../modals';
 import { SVNInfoPanel } from './SVNInfoPanel';
 
 export class SVNFileActions {
@@ -122,40 +122,6 @@ export class SVNFileActions {
 		modal.open();
 	}
 
-	async showBlame(currentFile: TFile | null): Promise<void> {
-		if (!currentFile || !this.isSvnClientReady()) return;
-
-		try {
-			// Check if file is in SVN
-			const isWorkingCopy = await this.svnClient.isWorkingCopy(currentFile.path);
-			if (!isWorkingCopy) {
-				new Notice('File is not in an SVN working copy.');
-				return;
-			}
-
-			const isFileInSvn = await this.svnClient.isFileInSvn(currentFile.path);
-			if (!isFileInSvn) {
-				new Notice('File is not tracked in SVN.');
-				return;
-			}
-
-			// Get blame data
-			const blameData = await this.svnClient.getBlame(currentFile.path);
-			
-			// Get current file content
-			const fileContent = await this.plugin.app.vault.read(currentFile);
-			const fileLines = fileContent.split('\n');
-
-			// Open blame modal
-			const modal = new BlameModal(this.plugin.app, this.plugin, currentFile, blameData, fileLines);
-			modal.open();
-
-		} catch (error: any) {
-			console.error('Error getting blame data:', error);
-			new Notice(`Error: ${error.message || 'Failed to get blame data.'}`);
-		}
-	}
-
 	async toggleInfoDisplay(): Promise<void> {
 		if (!this.infoPanel || !this.infoPanelComponent) return;
 		
@@ -169,6 +135,21 @@ export class SVNFileActions {
 		} else {
 			// Hide the panel
 			this.infoPanelComponent.hide();
+		}
+	}
+
+	async addFile(currentFile: TFile | null): Promise<void> {
+		if (!currentFile) {
+			new Notice('No file selected.');
+			return;
+		}
+		try {
+			await this.svnClient.add(currentFile.path);
+			new Notice(`File ${currentFile.name} added to version control.`);
+			this.onRefresh();
+		} catch (error: any) {
+			console.error('Failed to add file:', error);
+			new Notice(`Failed to add file: ${error.message}`);
 		}
 	}
 

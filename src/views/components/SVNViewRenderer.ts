@@ -57,7 +57,7 @@ export class SVNViewRenderer {
 		// Initialize managers
 		this.stateManager = new SVNViewStateManager();
 		this.layoutManager = new SVNViewLayoutManager(containerEl);
-		this.statusManager = new SVNViewStatusManager(svnClient, statusDisplay, this.stateManager);
+		this.statusManager = new SVNViewStatusManager(svnClient, statusDisplay, this.stateManager, fileStateRenderer);
 		this.historyManager = new SVNViewHistoryManager(
 			svnClient, 
 			plugin, 
@@ -195,12 +195,13 @@ export class SVNViewRenderer {
 		if (contentArea) {
 			this.repositoryHandler.renderRepositorySetup(contentArea, currentFile);
 		}
-	}
-
-	/**
+	}	/**
 	 * Refresh status directly (for fast updates)
 	 */
 	async refreshStatus(currentFile: TFile | null): Promise<void> {
+		if (!currentFile) return;
+		
+		// Use the status manager's direct update method which now routes properly
 		const statusContainer = this.layoutManager.getStatusContainer();
 		await this.statusManager.updateFileStatusDirect(currentFile, statusContainer);
 	}

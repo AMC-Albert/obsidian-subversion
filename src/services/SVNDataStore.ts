@@ -183,12 +183,14 @@ export class SVNDataStore {
 				this.dataCache.set(filePath, finalData);
 				this.notifySubscribers(filePath, finalData);
 				return finalData;
-			}            // Load additional data based on options
+			}      			// Load additional data based on options
 			// Use direct status override if available to prevent stale data
 			let statusPromise: Promise<SvnStatus[]>;
 			if (this.directStatusMap.has(filePath)) {
 				statusPromise = Promise.resolve(this.directStatusMap.get(filePath)!);
-			} else if (isFileInSvn && options.includeStatus !== false) {
+			} else if (options.includeStatus !== false) {
+				// Always get status when requested, regardless of isFileInSvn
+				// This is important for unversioned files which show status '?'
 				statusPromise = this.svnClient.getStatus(filePath).catch(() => []);
 			} else {
 				statusPromise = Promise.resolve([]);
@@ -226,9 +228,14 @@ export class SVNDataStore {
 				hasLocalChanges,
 				currentRevision,
 				lastUpdateTime: Date.now()
-			};
-
-			// Cache and notify
+			};			// Cache and notify
+			console.log('[SVN DataStore] Final data loaded:', {
+				filePath: filePath,
+				isWorkingCopy: finalData.isWorkingCopy,
+				isFileInSvn: finalData.isFileInSvn,
+				statusCount: finalData.status.length,
+				statusItems: finalData.status.map(s => ({ path: s.filePath, status: s.status }))
+			});
 			this.dataCache.set(filePath, finalData);
 			this.notifySubscribers(filePath, finalData);
 			return finalData;
