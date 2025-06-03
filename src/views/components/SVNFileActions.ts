@@ -3,23 +3,40 @@ import { SVNClient } from '../../services/SVNClient';
 import type ObsidianSvnPlugin from '../../main';
 import { CommitModal, ConfirmRevertModal, ConfirmRemoveModal, DiffModal } from '../../modals';
 import { SVNInfoPanel } from './SVNInfoPanel';
+import { SVNToolbar } from './SVNToolbar';
 
 export class SVNFileActions {
 	private plugin: ObsidianSvnPlugin;
 	private svnClient: SVNClient;
 	private infoPanel: HTMLElement | null = null;
 	private infoPanelComponent: SVNInfoPanel | null = null;
+	private onInfoToggle: ((isActive: boolean) => void) | null = null;
 	private onRefresh: () => void;
+	private toolbar: SVNToolbar | null = null;
 
 	constructor(plugin: ObsidianSvnPlugin, svnClient: SVNClient, onRefresh: () => void) {
 		this.plugin = plugin;
 		this.svnClient = svnClient;
 		this.onRefresh = onRefresh;
 	}
-
 	setInfoPanel(infoPanel: HTMLElement | null, infoPanelComponent?: SVNInfoPanel): void {
 		this.infoPanel = infoPanel;
 		this.infoPanelComponent = infoPanelComponent || null;
+	}	setInfoToggleCallback(callback: (isActive: boolean) => void): void {
+		this.onInfoToggle = callback;
+	}
+
+	setToolbar(toolbar: SVNToolbar): void {
+		this.toolbar = toolbar;
+	}
+
+	/**
+	 * Update button states after a file operation
+	 */
+	private async updateButtonStates(currentFile: TFile | null): Promise<void> {
+		if (this.toolbar) {
+			await this.toolbar.updateButtonStates(currentFile);
+		}
 	}
 
 	async quickCommit(currentFile: TFile | null): Promise<void> {
@@ -31,12 +48,13 @@ export class SVNFileActions {
 		const modal = new CommitModal(
 			this.plugin.app,
 			'Quick Commit',
-			`Update ${currentFile.name}`,
-			async (message: string) => {                try {
+			`Update ${currentFile.name}`,			async (message: string) => {                try {
 					await this.svnClient.commitFile(currentFile!.path, message);
 					new Notice(`File ${currentFile!.name} committed successfully.`);
 					// Refresh the view immediately - debouncing is handled in FileHistoryView
 					this.onRefresh();
+					// Update button states after commit
+					await this.updateButtonStates(currentFile);
 				} catch (error) {
 					error('General', 'Failed to commit file:', error);
 					new Notice(`Failed to commit: ${error.message}`);
@@ -77,11 +95,12 @@ export class SVNFileActions {
 				const activeView = this.plugin.app.workspace.getActiveViewOfType(ItemView);
 				if (activeView && 'editor' in activeView) {
 					(activeView as any).editor.setValue(content);
-				}
-				  new Notice(`File ${currentFile!.name} reverted to last committed version.`);
+				}				  new Notice(`File ${currentFile!.name} reverted to last committed version.`);
 				
 				// Refresh the view immediately - debouncing is handled in FileHistoryView
 				this.onRefresh();
+				// Update button states after revert
+				await this.updateButtonStates(currentFile);
 				
 			} catch (error) {
 				error('General', 'Failed to revert file:', error);
@@ -105,7 +124,6 @@ export class SVNFileActions {
 
 	async removeFromSvn(currentFile: TFile | null): Promise<void> {
 		if (!currentFile || !this.isSvnClientReady()) return;
-
 		const modal = new ConfirmRemoveModal(this.plugin.app, currentFile.name, async () => {
 			try {
 				await this.svnClient.removeFile(currentFile!.path);
@@ -113,6 +131,8 @@ export class SVNFileActions {
 				
 				// Refresh the view to update status
 				this.onRefresh();
+				// Update button states since file is no longer tracked
+				await this.updateButtonStates(currentFile);
 			} catch (error: any) {
 				error('General', 'Error removing file from SVN:', error);
 				new Notice(`Error: ${error.message || 'Failed to remove file from SVN.'}`);
@@ -120,9 +140,7 @@ export class SVNFileActions {
 		});
 		
 		modal.open();
-	}
-
-	async toggleInfoDisplay(): Promise<void> {
+	}	async toggleInfoDisplay(): Promise<void> {
 		if (!this.infoPanel || !this.infoPanelComponent) return;
 		
 		const currentFile = this.plugin.app.workspace.getActiveFile();
@@ -132,9 +150,39 @@ export class SVNFileActions {
 			// Show the panel
 			this.infoPanelComponent.show();
 			await this.infoPanelComponent.render(currentFile);
+			// Update toolbar button to active state
+			if (this.onInfoToggle) {
+				this.onInfoToggle(true);
+			}
 		} else {
 			// Hide the panel
 			this.infoPanelComponent.hide();
+			// Update toolbar button to inactive state
+			if (this.onInfoToggle) {
+				this.onInfoToggle(false);
+			}
+		}
+	}
+
+	/**
+	 * Check if the info panel is currently visible
+	 */
+	isInfoPanelVisible(): boolean {
+		return this.infoPanel ? 
+			(this.infoPanel.style.display !== 'none' && this.infoPanel.style.display !== '') : 
+			false;
+	}
+
+	/**
+	 * Hide the info panel and update button state
+	 */
+	hideInfoPanel(): void {
+		if (this.infoPanelComponent) {
+			this.infoPanelComponent.hide();
+			// Update toolbar button to inactive state
+			if (this.onInfoToggle) {
+				this.onInfoToggle(false);
+			}
 		}
 	}
 
@@ -147,6 +195,8 @@ export class SVNFileActions {
 			await this.svnClient.add(currentFile.path);
 			new Notice(`File ${currentFile.name} added to version control.`);
 			this.onRefresh();
+			// Update button states since file is now tracked
+			await this.updateButtonStates(currentFile);
 		} catch (error: any) {
 			error('General', 'Failed to add file:', error);
 			new Notice(`Failed to add file: ${error.message}`);

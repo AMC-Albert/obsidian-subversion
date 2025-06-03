@@ -1,4 +1,4 @@
-import { TFile } from 'obsidian';
+import { TFile, setTooltip } from 'obsidian';
 import { SVNClient } from '../../services/SVNClient';
 import { SVNFileData } from '../../services/SVNDataStore';
 import { UIState } from '../SVNUIController';
@@ -163,26 +163,51 @@ export class SVNViewHistoryManager {
 		
 		// Create main content container
 		const contentEl = listItem.createEl('div', { cls: 'svn-history-list-info-container' });
-		
 		// Create header with revision info
 		const headerEl = contentEl.createEl('div', { cls: 'svn-history-header' });
-		headerEl.createEl('span', { 
+		const revisionEl = headerEl.createEl('span', { 
 			text: `r${entry.revision}`,
 			cls: 'svn-revision'
 		});
-		headerEl.createEl('span', { 
+		setTooltip(revisionEl, `Revision ${entry.revision}`);
+		
+		const authorEl = headerEl.createEl('span', { 
 			text: entry.author,
 			cls: 'svn-author'
 		});
-		headerEl.createEl('span', { 
+		setTooltip(authorEl, `Author: ${entry.author}`);
+		
+		const dateEl = headerEl.createEl('span', { 
 			text: new Date(entry.date).toLocaleString(),
 			cls: 'svn-date'
 		});
-
+		setTooltip(dateEl, `Committed on: ${new Date(entry.date).toLocaleString()}`);		// Add file size information if available
+		if (entry.size !== undefined) {
+			const sizeEl = headerEl.createEl('span', { 
+				text: this.formatFileSize(entry.size),
+				cls: 'svn-size'
+			});
+			setTooltip(sizeEl, `File size: ${this.formatFileSize(entry.size)}`);
+		}
+		// Add repository storage size if available
+		if (entry.repoSize !== undefined) {
+			const repoSizeEl = headerEl.createEl('span', { 
+				cls: 'svn-repo-size'
+			});
+			setTooltip(repoSizeEl, `Repository storage: ${this.formatFileSize(entry.repoSize)}`);
+			repoSizeEl.createEl('span', { 
+				text: 'Δ',
+				cls: 'svn-delta-symbol'
+			});
+			repoSizeEl.createEl('span', { 
+				text: ` ${this.formatFileSize(entry.repoSize)}`
+			});
+		}
 		// Add commit message
 		if (entry.message) {
 			const messageEl = contentEl.createEl('div', { cls: 'svn-message' });
 			messageEl.setText(entry.message);
+			setTooltip(messageEl, 'Commit message');
 		}
 
 		// Add action buttons
@@ -190,5 +215,18 @@ export class SVNViewHistoryManager {
 			const actionsEl = listItem.createEl('div', { cls: 'svn-history-actions' });
 			this.historyRenderer.addHistoryItemActions(actionsEl, currentFile.path, entry, index, fullHistory);
 		}
+	}
+
+	/**
+	 * Format file size in human-readable format
+	 */
+	private formatFileSize(bytes: number): string {
+		if (bytes === 0) return '0 B';
+		
+		const k = 1024;
+		const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+		const i = Math.floor(Math.log(bytes) / Math.log(k));
+		
+		return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 	}
 }

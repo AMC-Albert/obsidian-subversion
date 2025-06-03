@@ -49,15 +49,19 @@ export class SVNView extends ItemView {
 		
 		// Initialize UI controller
 		this.uiController = new SVNUIController(plugin, this.svnClient);
-		
 		// Initialize all component instances first
 		this.fileActions = new SVNFileActions(plugin, this.svnClient, () => this.refreshData());
-		this.toolbar = new SVNToolbar(plugin, this.svnClient, this.fileActions, () => this.refreshData(), () => this.showRepositorySetup());
+		this.toolbar = new SVNToolbar(plugin, this.svnClient, this.fileActions, () => this.refreshData(), () => this.toggleRepositorySetup());
 		this.statusDisplay = new SVNStatusDisplay(this.svnClient);
 		this.historyRenderer = new SVNHistoryRenderer(this.svnClient, plugin, () => this.refreshData());
 		this.infoPanel = new SVNInfoPanel(plugin, this.svnClient);
 		this.fileStateRenderer = new SVNFileStateRenderer(plugin, this.svnClient, () => this.refreshData());
 		this.repositoryHandler = new SVNRepositoryHandler(plugin, this.svnClient, () => this.refreshData(), () => this.markUserInteraction());
+				// Set cross-references between components
+		this.fileActions.setInfoToggleCallback((isActive: boolean) => {
+			this.toolbar.setButtonActive('info', isActive);
+		});
+		this.fileActions.setToolbar(this.toolbar);
 	}
 
 	getViewType(): string {
@@ -163,27 +167,69 @@ export class SVNView extends ItemView {
 		
 		// Let the main renderer handle all UI updates first
 		await this.viewRenderer.handleUIStateChange(state, this.currentFile);
-		
-		// Check if we're showing repository setup after rendering
+				// Check if we're showing repository setup after rendering
 		const isShowingSetup = this.isShowingRepositorySetup();
 		logger.info('SVN SVNView', 'Setup mode detected:', isShowingSetup);
 		
-		// Enable/disable toolbar based on whether we're showing setup
-		this.toolbar.setEnabled(!isShowingSetup);
+		// Update toolbar button states based on current state
+		if (isShowingSetup) {
+			this.updateToolbarForRepositorySetup();
+		} else {
+			// Reset settings button active state and update button states normally
+			this.toolbar.setButtonActive('settings', false);
+			await this.toolbar.updateButtonStates(this.currentFile);
+		}
+	}	/**
+	 * Toggle between repository setup and normal view
+	 */
+	async toggleRepositorySetup(): Promise<void> {
+		const isCurrentlyShowingSetup = this.isShowingRepositorySetup();
+		
+		if (isCurrentlyShowingSetup) {
+			// Go back to normal view - first clear and prepare
+			this.viewRenderer.showNormalView(this.currentFile);
+			this.toolbar.setButtonActive('settings', false);
+			// Force a complete refresh to populate the normal view
+			await this.uiController.refreshCurrentFile();
+		} else {
+			// Show repository setup
+			this.showRepositorySetup();
+			this.toolbar.setButtonActive('settings', true);
+		}
 	}
-
 	/**
-	 * Show repository setup and disable toolbar
+	 * Show repository setup and update toolbar state
 	 */
 	showRepositorySetup(): void {
 		logger.info('SVN SVNView', 'Showing repository setup');
 		this.markUserInteraction();
 		
-		// Disable toolbar during setup
-		this.toolbar.setEnabled(false);
+		// Hide the info panel if it's currently visible
+		this.fileActions.hideInfoPanel();
+		
+		// Update toolbar button states instead of disabling entire toolbar
+		this.updateToolbarForRepositorySetup();
 		
 		// Directly render repository setup through the view renderer
 		this.viewRenderer.showRepositorySetup(this.currentFile);
+	}/**
+	 * Update toolbar button states when showing repository setup
+	 */
+	private updateToolbarForRepositorySetup(): void {
+		// Set the settings button as active
+		this.toolbar.setButtonActive('settings', true);
+		
+		// Disable other buttons during repository setup (only keep settings enabled)
+		this.toolbar.setButtonsDisabled({
+			'add': true,
+			'commit': true,
+			'revert': true,
+			'diff': true,
+			'info': true,
+			'remove': true,
+			'refresh': true,   // Disable refresh during setup
+			'settings': false  // Keep enabled for toggling
+		});
 	}
 
 	/**

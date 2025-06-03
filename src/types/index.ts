@@ -12,6 +12,8 @@ export interface SvnLogEntry {
     author: string;
     date: string;
     message: string;
+    size?: number; // File size in bytes
+    repoSize?: number; // Repository storage size for this revision in bytes
 }
 
 export interface SvnBlameEntry {

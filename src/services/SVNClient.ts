@@ -1,7 +1,7 @@
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { join, dirname, isAbsolute, relative } from 'path'; // Added relative
-import { existsSync } from 'fs';
+import { existsSync, statSync } from 'fs';
 import { SvnLogEntry, SvnStatus, SvnCommandResult, SvnBlameEntry, SvnInfo } from '../types';
 import { SvnError, SvnNotInstalledError, NotWorkingCopyError, SvnCommandError } from '../utils/errors';
 import { logger } from '../utils/logger';
@@ -44,19 +44,28 @@ export class SVNClient {
 			throw new Error('Vault path not set');
 		}
 		return join(this.vaultPath, filePath);
-	}
-
-	private findSvnWorkingCopy(absolutePath: string): string | null {
-		let currentPath = dirname(absolutePath);
+	}	private findSvnWorkingCopy(absolutePath: string): string | null {
+		// Start from the path itself, then check parent directories
+		let currentPath = absolutePath;
+		logger.debug('SVN Client', `Looking for SVN working copy starting from: ${currentPath}`);
+		
+		// If the path is a file, start from its directory
+		if (existsSync(currentPath) && !statSync(currentPath).isDirectory()) {
+			currentPath = dirname(currentPath);
+			logger.debug('SVN Client', `Path is a file, starting from directory: ${currentPath}`);
+		}
 		
 		while (currentPath && currentPath !== dirname(currentPath)) {
 			const svnPath = join(currentPath, '.svn');
+			logger.debug('SVN Client', `Checking for .svn directory at: ${svnPath}`);
 			if (existsSync(svnPath)) {
+				logger.info('SVN Client', `Found SVN working copy at: ${currentPath}`);
 				return currentPath;
 			}
 			currentPath = dirname(currentPath);
 		}
 		
+		logger.warn('SVN Client', `No SVN working copy found starting from: ${absolutePath}`);
 		return null;
 	}
 
@@ -108,7 +117,10 @@ export class SVNClient {
 		const entries = this.parseXmlLog(stdout);
 		logger.debug('SVN Client', 'getFileHistory parsed entries:', entries);
 
-		return entries;
+		// Enrich entries with size information
+		const entriesWithSize = await this.enrichHistoryWithSizes(filePath, entries);
+
+		return entriesWithSize;
 		} catch (error) {
 			logger.error('SVN Client', 'getFileHistory error:', { filePath, error: error.message });
 			// Check if this is a "file not in SVN" error and preserve the original message
@@ -125,6 +137,32 @@ export class SVNClient {
 			throw new Error(`Failed to get file history: ${error.message}`);
 		}
 	}
+	/**
+	 * Enrich log entries with file size information for each revision
+	 */
+	private async enrichHistoryWithSizes(filePath: string, entries: SvnLogEntry[]): Promise<SvnLogEntry[]> {
+		const enrichedEntries: SvnLogEntry[] = [];
+		
+		for (const entry of entries) {			try {
+				const [size, repoSize] = await Promise.all([
+					this.getFileSizeAtRevision(filePath, entry.revision),
+					this.getRevisionStorageSize(entry.revision)
+				]);
+				
+				enrichedEntries.push({
+					...entry,
+					size: size !== null ? size : undefined,
+					repoSize: repoSize !== null ? repoSize : undefined
+				});
+			} catch (error) {
+				logger.warn('SVN Client', `Failed to get size info for revision ${entry.revision}:`, error.message);
+				// Add entry without size information
+				enrichedEntries.push(entry);
+			}
+		}
+		
+		return enrichedEntries;
+	}
 
 	async getFileRevisions(filePath: string): Promise<string[]> {
 		try {
@@ -133,7 +171,128 @@ export class SVNClient {
 		} catch (error) {
 			throw new Error(`Failed to get file revisions: ${error.message}`);
 		}
-	}    async checkoutRevision(filePath: string, revision: string): Promise<void> {
+	}
+
+	/**
+	 * Get the file size for a specific revision
+	 */
+	async getFileSizeAtRevision(filePath: string, revision: string): Promise<number | null> {
+		try {
+			const absolutePath = this.resolveAbsolutePath(filePath);
+			const workingCopyRoot = this.findSvnWorkingCopy(absolutePath);
+			
+			if (!workingCopyRoot) {
+				throw new Error('File is not in an SVN working copy');
+			}
+
+			// Use svn list --verbose with revision specifier to get file size
+			const command = `${this.svnPath} list --verbose "${absolutePath}@${revision}"`;
+			const result = await execPromise(command, { cwd: workingCopyRoot });
+			
+			// Parse the output: "    revision author    size date filename"
+			// Example: "      6 osheaa         577328 Jun 03 15:49 ASSETFILER.blend"
+			const lines = result.stdout.trim().split('\n');
+			if (lines.length === 0) {
+				return null;
+			}
+			
+			const line = lines[0].trim();
+			const parts = line.split(/\s+/);
+			
+			// The size should be the 3rd column (index 2)
+			if (parts.length >= 3) {
+				const size = parseInt(parts[2], 10);
+				if (!isNaN(size)) {
+					return size;
+				}
+			}
+			
+			return null;
+		} catch (error: any) {
+			logger.warn('SVN Client', `Failed to get file size for revision ${revision}:`, error.message);
+			return null;
+		}
+	}	/**
+	 * Get the repository storage size for a specific revision
+	 */
+	async getRevisionStorageSize(revision: string): Promise<number | null> {
+		try {
+			// Try multiple strategies to find working copy
+			let workingCopyRoot = null;
+			
+			// Strategy 1: Try vault path
+			if (this.vaultPath) {
+				workingCopyRoot = this.findSvnWorkingCopy(this.vaultPath);
+				logger.debug('SVN Client', `Strategy 1 - Vault path ${this.vaultPath}, found working copy:`, workingCopyRoot);
+			}
+			
+			// Strategy 2: Try parent of vault path
+			if (!workingCopyRoot && this.vaultPath) {
+				const parentPath = dirname(this.vaultPath);
+				workingCopyRoot = this.findSvnWorkingCopy(parentPath);
+				logger.debug('SVN Client', `Strategy 2 - Parent of vault path ${parentPath}, found working copy:`, workingCopyRoot);
+			}
+			
+			// Strategy 3: Try current working directory
+			if (!workingCopyRoot) {
+				workingCopyRoot = this.findSvnWorkingCopy(process.cwd());
+				logger.debug('SVN Client', `Strategy 3 - CWD ${process.cwd()}, found working copy:`, workingCopyRoot);
+			}
+			
+			// Strategy 4: Try parent of current working directory
+			if (!workingCopyRoot) {
+				const parentCwd = dirname(process.cwd());
+				workingCopyRoot = this.findSvnWorkingCopy(parentCwd);
+				logger.debug('SVN Client', `Strategy 4 - Parent of CWD ${parentCwd}, found working copy:`, workingCopyRoot);
+			}
+			
+			if (!workingCopyRoot) {
+				logger.warn('SVN Client', `Could not find SVN working copy. Vault path: ${this.vaultPath}, CWD: ${process.cwd()}`);
+				return null;
+			}
+
+			logger.info('SVN Client', `Getting repository size for revision ${revision}, working copy: ${workingCopyRoot}`);
+
+			// Get repository root path from svn info
+			const infoCommand = `${this.svnPath} info --xml "${workingCopyRoot}"`;
+			const infoResult = await execPromise(infoCommand, { cwd: workingCopyRoot });
+			
+			const rootMatch = infoResult.stdout.match(/<root>(.*?)<\/root>/);
+			if (!rootMatch) {
+				logger.warn('SVN Client', 'Could not determine repository path from svn info');
+				return null;
+			}
+			
+			const repositoryUrl = rootMatch[1];
+			logger.debug('SVN Client', 'Repository URL found:', repositoryUrl);
+			
+			// Convert file:// URL to local path for svnadmin
+			let repositoryPath = repositoryUrl.replace(/^file:\/\/\//, '').replace(/^file:\/\//, '');
+			// Convert forward slashes to backslashes on Windows
+			repositoryPath = repositoryPath.replace(/\//g, '\\');
+			
+			logger.debug('SVN Client', 'Repository path converted:', repositoryPath);
+			
+			// Use svnadmin rev-size to get the actual repository storage size
+			const command = `svnadmin rev-size "${repositoryPath}" -r ${revision} -q`;
+			logger.debug('SVN Client', 'Executing command:', command);
+			
+			const result = await execPromise(command);
+			
+			const size = parseInt(result.stdout.trim(), 10);
+			if (!isNaN(size)) {
+				logger.info('SVN Client', `Repository size for revision ${revision}: ${size} bytes`);
+				return size;
+			}
+			
+			logger.warn('SVN Client', `Could not parse repository size from output: ${result.stdout}`);
+			return null;		} catch (error: any) {
+			logger.warn('SVN Client', `Failed to get repository size for revision ${revision}:`, error.message);
+			return null;
+		}
+	}
+
+	async checkoutRevision(filePath: string, revision: string): Promise<void> {
 		try {
 			const absolutePath = this.resolveAbsolutePath(filePath);
 			const workingCopyRoot = this.findSvnWorkingCopy(absolutePath);

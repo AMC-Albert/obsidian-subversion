@@ -133,6 +133,16 @@
     white-space: nowrap;
 }
 
+.svn-size {
+    font-size: var(--font-ui-smaller);
+    color: var(--text-accent);
+    font-weight: var(--font-weight-medium);
+    white-space: nowrap;
+    background: var(--background-modifier-border);
+    padding: 1px var(--size-2-2);
+    border-radius: var(--radius-s);
+}
+
 .svn-entry-actions {
     position: absolute;
     right: 0;
@@ -258,46 +268,83 @@
     border-top: 1px solid var(--background-modifier-border);
 }
 
-.svn-loading-small {
-    font-size: var(--font-ui-smaller);
-    color: var(--text-muted);
-    font-style: italic;
+.svn-info-container {
+    font-size: var(--font-ui-small);
+}
+
+.svn-info-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
 }
 
 .svn-info-item {
     font-size: var(--font-ui-smaller);
-    margin-bottom: var(--size-4-1);
-    color: var(--text-muted);
+    margin-bottom: var(--size-4-2);
+    display: flex;
+    gap: var(--size-2-1);
 }
 
 .svn-info-item:last-child {
     margin-bottom: 0;
 }
 
-.svn-info-url {
-    font-family: var(--font-monospace);
-    word-break: break-all;
+.svn-info-item strong {
+    font-weight: var(--font-weight-medium);
+    min-width: 140px;
+    flex-shrink: 0;
 }
 
-.svn-info-header {
-    font-weight: var(--font-weight-medium);
-    color: var(--text-normal);
+.svn-info-url {
+    font-family: var(--font-monospace);
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+    word-break: break-all;
+    flex: 1;
 }
 
 .svn-info-prop {
     font-family: var(--font-monospace);
     font-size: var(--font-ui-smaller);
-    margin-left: var(--size-4-2);
+    color: var(--text-muted);
+    flex: 1;
 }
 
-/* Info Panel Styles */
-.svn-info-panel {
-    margin: var(--size-4-2) 0;
-    padding: var(--size-4-3);
-    background: var(--background-modifier-hover);
-    border-radius: var(--radius-s);
-    border-left: 3px solid var(--interactive-accent);
+.svn-info-warning {
+    color: var(--text-warning);
+    font-style: italic;
+    text-align: center;
+    padding: var(--size-4-2);
+}
+
+.svn-info-error {
+    color: var(--text-error);
+    font-style: italic;
+    text-align: center;
+    padding: var(--size-4-2);
+}
+
+/* Info Panel Divider and Section Styles */
+.svn-info-divider {
+    border: none;
     border-top: 1px solid var(--background-modifier-border);
+    margin: var(--size-4-4) 0 var(--size-4-3) 0;
+}
+
+.svn-info-section-header {
+    font-size: var(--font-ui-small);
+    font-weight: var(--font-weight-medium);
+    color: var(--text-normal);
+    margin: 0 0 var(--size-4-2) 0;
+    padding: 0;
+}
+
+.svn-info-path {
+    font-family: var(--font-monospace);
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+    word-break: break-all;
+    flex: 1;
 }
 
 .svn-loading-small {
@@ -365,6 +412,28 @@
     white-space: nowrap;
 }
 
+.svn-history-item .svn-size {
+    color: var(--text-muted);
+    font-size: var(--font-ui-smaller);
+    font-weight: var(--tag-weight);
+    background: var(--background-modifier-border);
+    padding: 2px 6px;
+    border-radius: var(--radius-s);
+}
+
+.svn-history-item .svn-repo-size {
+    font-size: var(--font-ui-smaller);
+    font-weight: var(--tag-weight);
+    background: var(--color-accent);
+    padding: 2px 6px;
+    border-radius: var(--radius-s);
+}
+
+.svn-delta-symbol {
+    font-size: 9px;
+    opacity: 0.7;
+    vertical-align: top;}
+
 .svn-history-item .svn-message {
     font-size: var(--font-ui-smaller);
     color: var(--text-muted);
@@ -373,6 +442,8 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    display: inline-block;
+    max-width: 100%;
 }
 
 .svn-history-actions {
@@ -420,6 +491,14 @@
 .svn-toolbar-disabled button:disabled {
     color: var(--text-faint);
 }
+
+/* Individual disabled buttons */
+button:disabled,
+.clickable-icon.disabled {
+    color: var(--text-faint);
+    pointer-events: none;
+}
+
 
 /* Minimal responsiveness */
 @media (max-width: 400px) {

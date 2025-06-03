@@ -38,14 +38,13 @@ export class SVNViewLayoutManager {
 		
 		this.isInitialized = true;
 	}
-
 	/**
 	 * Setup the info panel with necessary components
 	 */
 	setupInfoPanel(infoPanel: SVNInfoPanel, fileActions: any): void {
 		if (this.infoPanelElement) {
 			infoPanel.setPanelElement(this.infoPanelElement);
-			fileActions.setInfoPanel(this.infoPanelElement);
+			fileActions.setInfoPanel(this.infoPanelElement, infoPanel);
 		}
 	}
 

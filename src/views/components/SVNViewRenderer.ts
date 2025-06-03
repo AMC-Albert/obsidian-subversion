@@ -104,6 +104,12 @@ export class SVNViewRenderer {
 				logInfo('SVN ViewRenderer', 'Skipping UI update - user interaction in progress');
 				return;
 			}
+
+			// Skip rendering if we're currently showing repository setup
+			if (this.isShowingRepositorySetup()) {
+				logInfo('SVN ViewRenderer', 'Skipping UI update - repository setup is active');
+				return;
+			}
 			  // Override state data status with recent direct status if within protection window
 			if (this.stateManager.isWithinProtectionWindow() && state.data) {
 				const directData = this.stateManager.getLastDirectStatusData();
@@ -218,18 +224,55 @@ export class SVNViewRenderer {
 		}
 		  // Update content type tracking
 		this.stateManager.setLastContentType(contentType);
-	}/**
+	}	/**
 	 * Show repository setup UI
 	 */
 	showRepositorySetup(currentFile: TFile | null): void {
-		logInfo('SVN ViewRenderer', 'Showing repository setup');
-		
+		logInfo('SVN ViewRenderer', 'Showing repository setup view');
 		// Clear the content area and show repository setup
 		const contentArea = this.layoutManager.getContentArea();
 		if (contentArea) {
+			contentArea.empty();
 			this.repositoryHandler.renderRepositorySetup(contentArea, currentFile);
 		}
-	}	/**
+	}
+
+	/**
+	 * Check if currently showing repository setup
+	 */
+	private isShowingRepositorySetup(): boolean {
+		const contentArea = this.layoutManager.getContentArea();
+		if (!contentArea) return false;
+		
+		// Check for repository setup indicators
+		const hasSetupContent = 
+			contentArea.querySelector('.workspace-leaf-content') !== null ||
+			(contentArea.querySelector('h3')?.textContent?.includes('Repository Setup') ?? false) ||
+			(contentArea.textContent?.includes('Repository setup') ?? false) ||
+			(contentArea.textContent?.includes('not found in vault') ?? false) ||
+			(contentArea.textContent?.includes('Create New Repository') ?? false) ||
+			(contentArea.textContent?.includes('Checkout Existing Repository') ?? false);
+
+		return hasSetupContent;
+	}/**
+	 * Show the normal file view (opposite of repository setup)
+	 */
+	showNormalView(currentFile: TFile | null): void {
+		logInfo('SVN ViewRenderer', 'Showing normal file view');
+		// Clear the content area
+		const contentArea = this.layoutManager.getContentArea();
+		if (contentArea) {
+			contentArea.empty();
+		}
+		
+		// Reset state tracking to ensure fresh rendering
+		this.stateManager.resetStateTracking();
+		
+		// The actual data refresh should be triggered by the caller (SVNView)
+		// This method just prepares the view for normal content
+	}
+
+	/**
 	 * Refresh status directly (for fast updates)
 	 */
 	async refreshStatus(currentFile: TFile | null): Promise<void> {
