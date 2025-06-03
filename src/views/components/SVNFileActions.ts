@@ -38,7 +38,7 @@ export class SVNFileActions {
 					// Refresh the view immediately - debouncing is handled in FileHistoryView
 					this.onRefresh();
 				} catch (error) {
-					console.error('Failed to commit file:', error);
+					error('General', 'Failed to commit file:', error);
 					new Notice(`Failed to commit: ${error.message}`);
 				}
 			}
@@ -57,7 +57,7 @@ export class SVNFileActions {
 			const modal = new DiffModal(this.plugin.app, currentFile.name, diff);
 			modal.open();
 		} catch (error) {
-			console.error('Failed to get diff:', error);
+			error('General', 'Failed to get diff:', error);
 			new Notice(`Failed to get diff: ${error.message}`);
 		}
 	}
@@ -84,7 +84,7 @@ export class SVNFileActions {
 				this.onRefresh();
 				
 			} catch (error) {
-				console.error('Failed to revert file:', error);
+				error('General', 'Failed to revert file:', error);
 				new Notice(`Failed to revert: ${error.message}`);
 			}
 		};
@@ -114,7 +114,7 @@ export class SVNFileActions {
 				// Refresh the view to update status
 				this.onRefresh();
 			} catch (error: any) {
-				console.error('Error removing file from SVN:', error);
+				error('General', 'Error removing file from SVN:', error);
 				new Notice(`Error: ${error.message || 'Failed to remove file from SVN.'}`);
 			}
 		});
@@ -148,7 +148,7 @@ export class SVNFileActions {
 			new Notice(`File ${currentFile.name} added to version control.`);
 			this.onRefresh();
 		} catch (error: any) {
-			console.error('Failed to add file:', error);
+			error('General', 'Failed to add file:', error);
 			new Notice(`Failed to add file: ${error.message}`);
 		}
 	}
@@ -238,3 +238,4 @@ export class SVNFileActions {
 			   typeof this.svnClient.setVaultPath === 'function';
 	}
 }
+

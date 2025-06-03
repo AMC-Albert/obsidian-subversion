@@ -17,7 +17,7 @@ export class SVNConstants {
 		CONFLICTED: '⚠️', // Files with merge conflicts
 		UNVERSIONED: '?', // Files not tracked by SVN
 		MISSING: '❌', // Files missing from working copy
-		UP_TO_DATE: '✅', // Files with no changes
+		UP_TO_DATE: '✓', // Files with no changes
 		
 		// 🚀 Special Status Icons - Used for system states
 		NOT_IN_WORKING_COPY: '▢', // File/folder not in SVN repository

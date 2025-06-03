@@ -1,7 +1,11 @@
 import { ButtonComponent, TFile, Notice } from 'obsidian';
+import { debug, info, warn, error } from '../utils/logger';
 import { SVNClient } from '../../services/SVNClient';
+import { debug, info, warn, error } from '../utils/logger';
 import type ObsidianSvnPlugin from '../../main';
+import { debug, info, warn, error } from '../utils/logger';
 import { SVNFileActions } from './SVNFileActions';
+import { debug, info, warn, error } from '../utils/logger';
 
 export class SVNToolbar {
 	private plugin: ObsidianSvnPlugin;
@@ -120,3 +124,4 @@ export class SVNToolbar {
 		});
 	}
 }
+

@@ -97,7 +97,7 @@ export class SVNInfoPanel {
 			}
 			
 		} catch (error) {
-			console.error('Error getting SVN info:', error);
+			error('General', 'Error getting SVN info:', error);
 			this.panelElement.createEl('p', { 
 				text: `Error: ${error.message}`,
 				cls: 'svn-info-error'
@@ -105,3 +105,4 @@ export class SVNInfoPanel {
 		}
 	}
 }
+

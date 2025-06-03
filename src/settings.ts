@@ -34,7 +34,7 @@ export class SvnSettingTab extends PluginSettingTab {
 					.setPlaceholder('my-vault-repo')
 					.setValue(this.plugin.settings.repositoryName || '')
 					.onChange(async (value) => {
-						console.log('[SVN Settings] Raw repository name input:', value);
+						//debug('Settings', Raw repository name input:', value);
 						
 						// Clear any existing timeout
 						if (saveTimeout) {
@@ -45,10 +45,10 @@ export class SvnSettingTab extends PluginSettingTab {
 						saveTimeout = setTimeout(async () => {
 							// Strip any leading dots to ensure consistent handling
 							const cleanValue = value.replace(/^\.+/, '');
-							console.log('[SVN Settings] Cleaned repository name:', cleanValue);
+							//debug('Settings', Cleaned repository name:', cleanValue);
 							this.plugin.settings.repositoryName = cleanValue;
 							await this.plugin.saveSettings();
-							console.log('[SVN Settings] Saved settings:', this.plugin.settings);
+							//debug('Settings', Saved settings:', this.plugin.settings);
 						}, 500); // Wait 500ms after user stops typing
 					});
 			});
@@ -75,3 +75,4 @@ export class SvnSettingTab extends PluginSettingTab {
 				}));
 	}
 }
+

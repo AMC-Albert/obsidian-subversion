@@ -18,9 +18,9 @@ export class SVNRepositoryHandler {
     }    async validateRepository(): Promise<{ isValid: boolean; repoPath?: string; error?: string }> {
         try {
             const settings = this.plugin.settings;
-            console.log('[SVN RepositoryHandler] validateRepository - full settings:', settings);
-            console.log('[SVN RepositoryHandler] validateRepository - repositoryName:', settings.repositoryName);
-            
+            //debug('RepositoryHandler', validateRepository - full settings:', settings);
+            //debug('RepositoryHandler', validateRepository - repositoryName:', settings.repositoryName);
+
             if (!settings.repositoryName) {
                 return { 
                     isValid: false, 
@@ -38,9 +38,9 @@ export class SVNRepositoryHandler {
 
             const hiddenRepoName = `.${settings.repositoryName}`;
             const repoPath = join(vaultPath, hiddenRepoName);
-            
-            console.log('[SVN RepositoryHandler] validateRepository - hiddenRepoName:', hiddenRepoName);
-            console.log('[SVN RepositoryHandler] validateRepository - repoPath:', repoPath);
+
+            //debug('RepositoryHandler', validateRepository - hiddenRepoName:', hiddenRepoName);
+            //debug('RepositoryHandler', validateRepository - repoPath:', repoPath);
 
             // Check if repository exists
             const fs = require('fs');
@@ -109,14 +109,14 @@ export class SVNRepositoryHandler {
                         (this.plugin.app as any).setting.open();
                         (this.plugin.app as any).setting.openTabById(this.plugin.manifest.id);
                     } catch (error) {
-                        console.error('Failed to open settings:', error);
+                        error('General', 'Failed to open settings:', error);
                     }
                 });
         } else {
             // Repository name is configured but repo doesn't exist
-            console.log('[SVN RepositoryHandler] Repository name configured:', settings.repositoryName);
-            console.log('[SVN RepositoryHandler] Validation error:', validation.error);
-            
+            //debug('RepositoryHandler', Repository name configured:', settings.repositoryName);
+            //debug('RepositoryHandler', Validation error:', validation.error);
+
             // Create new repository section
             const newRepoItem = container.createEl('div', { cls: 'setting-item' });
             const newRepoInfo = newRepoItem.createEl('div', { cls: 'setting-item-info' });
@@ -200,7 +200,7 @@ export class SVNRepositoryHandler {
             
             await this.initWorkingCopy(repoPath, currentFile);
         } catch (error) {
-            console.error('Failed to create repository:', error);
+            error('General', 'Failed to create repository:', error);
             new Notice(`Failed to create repository: ${error.message}`);
         }
     }
@@ -219,7 +219,7 @@ export class SVNRepositoryHandler {
             new Notice('Repository checked out successfully');
             this.onRefresh();
         } catch (error) {
-            console.error('Failed to checkout repository:', error);
+            error('General', 'Failed to checkout repository:', error);
             new Notice(`Failed to checkout repository: ${error.message}`);
         }
     }    private async initWorkingCopy(repoPath: string, currentFile: TFile | null): Promise<void> {
@@ -237,7 +237,7 @@ export class SVNRepositoryHandler {
             new Notice('Working copy initialized successfully');
             this.onRefresh();
         } catch (error) {
-            console.error('Failed to initialize working copy:', error);
+            error('General', 'Failed to initialize working copy:', error);
             new Notice(`Failed to initialize working copy: ${error.message}`);
         }
     }    private async showCheckoutModal(currentFile: TFile | null): Promise<void> {
@@ -247,11 +247,11 @@ export class SVNRepositoryHandler {
                 'Checkout SVN Repository',
                 async (url: string) => {
                     try {
-                        console.log('[SVN RepositoryHandler] Starting checkout from:', url);
+                        //debug('RepositoryHandler', Starting checkout from:', url);
                         await this.checkoutExternalRepository(url, currentFile);
                         resolve();
                     } catch (error: any) {
-                        console.error('[SVN RepositoryHandler] Checkout failed:', error);
+                        //error('RepositoryHandler', Checkout failed:', error);
                         new Notice(`Checkout failed: ${error.message}`);
                         resolve();
                     }
@@ -280,8 +280,11 @@ export class SVNRepositoryHandler {
             new Notice('External repository checked out successfully');
             this.onRefresh();
         } catch (error) {
-            console.error('Failed to checkout external repository:', error);
+            error('General', 'Failed to checkout external repository:', error);
             new Notice(`Failed to checkout repository: ${error.message}`);
         }
     }
 }
+
+
+

@@ -37,7 +37,7 @@ export class SVNFileStateRenderer {
 					new Notice(`File ${currentFile.name} added to SVN`);
 					this.onRefresh();
 				} catch (error) {
-					console.error('Failed to add file to SVN:', error);
+					error('General', 'Failed to add file to SVN:', error);
 					new Notice(`Failed to add file to SVN: ${error.message}`);
 				}
 			});
@@ -70,7 +70,7 @@ export class SVNFileStateRenderer {
 							new Notice(`File ${currentFile.name} committed successfully`);
 							this.onRefresh();
 						} catch (error) {
-							console.error('Failed to commit file:', error);
+							error('General', 'Failed to commit file:', error);
 							new Notice(`Failed to commit: ${error.message}`);
 						}
 					}
@@ -79,3 +79,4 @@ export class SVNFileStateRenderer {
 			});
 	}
 }
+
