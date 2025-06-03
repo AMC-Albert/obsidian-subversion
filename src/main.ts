@@ -94,14 +94,14 @@ export default class ObsidianSvnPlugin extends Plugin {
 		this.addSettingTab(new SvnSettingTab(this.app, this));
 
 		// Add ribbon icon
-		this.addRibbonIcon(PLUGIN_CONSTANTS.ICON_ID, 'Open SVN Manager', () => {
+		this.addRibbonIcon(PLUGIN_CONSTANTS.ICON_ID, 'Open Subversion view', () => {
 			this.openFileHistoryView();
 		});
 
 		// Add main command to open view
 		this.addCommand({
 			id: 'svn-open-file-history-view',
-			name: 'Open SVN Manager',
+			name: 'Open Subversion view',
 			callback: () => {
 				this.activateView();
 			}
