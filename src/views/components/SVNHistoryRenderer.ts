@@ -1,4 +1,4 @@
-import { Component, Notice, WorkspaceLeaf } from 'obsidian';
+import { Notice, WorkspaceLeaf } from 'obsidian';
 import { ButtonComponent } from 'obsidian';
 import { SVNClient } from '../../services/SVNClient';
 import { DiffModal } from '../../modals/DiffModal';
@@ -15,54 +15,7 @@ export class SVNHistoryRenderer {
 		this.plugin = plugin;
 		this.refreshCallback = refreshCallback;
 	}
-
-	renderHistory(historyEl: HTMLElement, filePath: string): void {
-		
-		historyEl.empty();
-		
-		this.svnClient.getFileHistory(filePath).then((history: SvnLogEntry[]) => {
-			if (history.length === 0) {
-				historyEl.createEl('p', { text: 'No history found for this file.' });
-				return;
-			}
-
-			const historyList = historyEl.createEl('ul', { cls: 'svn-history-list' });
-			history.forEach((entry, index) => {
-				const listItem = historyList.createEl('li', { cls: 'svn-history-item' });
-				
-				// Create main content container
-				const contentEl = listItem.createEl('div', { cls: 'svn-history-content' });
-				
-				// Create header with revision info
-				const headerEl = contentEl.createEl('div', { cls: 'svn-history-header' });
-				headerEl.createEl('span', { 
-					text: `r${entry.revision}`,
-					cls: 'svn-revision'
-				});
-				headerEl.createEl('span', { 
-					text: entry.author,
-					cls: 'svn-author'
-				});
-				headerEl.createEl('span', { 
-					text: new Date(entry.date).toLocaleString(),
-					cls: 'svn-date'
-				});                // Add commit message
-				if (entry.message) {
-					const messageEl = contentEl.createEl('div', { cls: 'svn-message' });
-					messageEl.setText(entry.message);
-				}                // Add action buttons container (right-aligned and vertically centered)
-				const actionsEl = listItem.createEl('div', { cls: 'svn-history-actions' });
-				
-				this.addHistoryItemActions(actionsEl, filePath, entry, index, history);
-			});
-		}).catch((error: any) => {
-			historyEl.createEl('p', { 
-				text: `Error loading history: ${error.message}`,
-				cls: 'svn-error'
-			});
-		});
-	}
-
+	
 	/**
 	 * Add action buttons for a history item (used by data bus system)
 	 */
@@ -169,7 +122,9 @@ export class SVNHistoryRenderer {
 			logError('SVNHistoryRenderer', 'Error checking out revision:', error);
 			new Notice(`Failed to checkout revision ${revision}: ${error.message}`, 5000);
 		}
-	}    private async forceFileReload(filePath: string): Promise<void> {
+	}
+	
+	private async forceFileReload(filePath: string): Promise<void> {
 		try {
 			// Get the TFile object for the changed file
 			const file = this.plugin.app.vault.getAbstractFileByPath(filePath);

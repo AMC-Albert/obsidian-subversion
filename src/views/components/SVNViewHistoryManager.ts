@@ -4,7 +4,7 @@ import { SVNFileData } from '../../services/SVNDataStore';
 import { UIState } from '../SVNUIController';
 import { SVNHistoryRenderer, SVNFileStateRenderer, SVNRepositoryHandler } from '.';
 import type ObsidianSvnPlugin from '../../main';
-import { logDebug, logInfo } from '../../utils/logger';
+import { logInfo } from '../../utils/logger';
 
 /**
  * Manages history rendering and content display for the FileHistoryView
@@ -162,7 +162,7 @@ export class SVNViewHistoryManager {
 		const listItem = historyList.createEl('li', { cls: 'svn-history-item' });
 		
 		// Create main content container
-		const contentEl = listItem.createEl('div', { cls: 'svn-history-content' });
+		const contentEl = listItem.createEl('div', { cls: 'svn-history-list-info-container' });
 		
 		// Create header with revision info
 		const headerEl = contentEl.createEl('div', { cls: 'svn-history-header' });

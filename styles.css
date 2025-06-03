@@ -333,6 +333,10 @@
     margin-top: var(--size-4-2);
 }
 
+.svn-history-list-info-container {
+    flex: 1;
+}
+
 .svn-history-header {
     display: flex;
     align-items: center;

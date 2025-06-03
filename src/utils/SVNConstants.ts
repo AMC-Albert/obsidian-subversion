@@ -10,19 +10,19 @@ export class SVNConstants {
 	 */
 	static readonly ICONS = {
 		// 📁 File Status Icons - Used for actual SVN file states
-		MODIFIED: '🔄', // Files with local changes
+		MODIFIED: '✱', // Files with local changes
 		ADDED: '+', // Files staged for addition
 		DELETED: '–', // Files staged for deletion
-		REPLACED: '🔄', // Files that were replaced
-		CONFLICTED: '⚠️', // Files with merge conflicts
+		REPLACED: '⇄', // Files that were replaced
+		CONFLICTED: '≠', // Files with merge conflicts
 		UNVERSIONED: '?', // Files not tracked by SVN
-		MISSING: '❌', // Files missing from working copy
+		MISSING: '⨉', // Files missing from working copy
 		UP_TO_DATE: '✓', // Files with no changes
 		
 		// 🚀 Special Status Icons - Used for system states
 		NOT_IN_WORKING_COPY: '▢', // File/folder not in SVN repository
-		ERROR: '❌', // Error states (failed operations)
-		LOADING: '⏳', // Loading/processing states
+		ERROR: '⨉', // Error states (failed operations)
+		LOADING: '↻', // Loading/processing states
 		UNKNOWN: '?' // Unknown or unexpected states
 	} as const;
 
