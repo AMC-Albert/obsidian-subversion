@@ -1,7 +1,7 @@
 {
 	"id": "subversion",
 	"name": "Subversion",
-	"version": "0.2.2",
+	"version": "0.2.3",
 	"minAppVersion": "1.8.10",
 	"description": "Integrates Subversion (SVN) for fine-grain control over file revisions.",
 	"author": "Albert O'Shea",
