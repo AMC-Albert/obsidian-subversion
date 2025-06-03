@@ -1,4 +1,5 @@
 import { UIState } from '../SVNUIController';
+import { logDebug, logInfo } from '../../utils/logger';
 
 /**
  * Manages state tracking and hash calculations for the FileHistoryView
@@ -11,8 +12,9 @@ export class SVNViewStateManager {
 	private lastStatusHash: string | null = null;
 	private lastContentType: string | null = null;
 	private lastHistoryHash: string | null = null;
-	private lastDirectStatusUpdateTime = 0;    private lastDirectStatusData: { isWorkingCopy: boolean; status: any[]; info: any | null } | null = null;
-	
+	private lastDirectStatusUpdateTime = 0;
+	private lastDirectStatusData: { isWorkingCopy: boolean; status: any[]; info: any | null } | null = null;
+
 	// User interaction protection (prevent DOM rebuilding during clicks)
 	private userInteractionWindow = 0;
 	private static readonly USER_INTERACTION_WINDOW_MS = 1000; // 1 second protection
@@ -147,7 +149,7 @@ export class SVNViewStateManager {
 	 * Check if history data has meaningfully changed
 	 */	hasHistoryChanged(state: UIState): boolean {
 		if (!state.data) {
-			console.log('[SVN StateManager] hasHistoryChanged: No data, returning true');
+			logDebug('SVN StateManager', 'hasHistoryChanged: No data, returning true');
 			return true;
 		}
 		
@@ -161,7 +163,7 @@ export class SVNViewStateManager {
 		const currentHistoryHash = JSON.stringify(historyData);
 		const changed = currentHistoryHash !== this.lastHistoryHash;
 		
-		console.log('[SVN StateManager] hasHistoryChanged check:', {
+		logInfo('SVN StateManager', 'hasHistoryChanged check:', {
 			currentHash: currentHistoryHash,
 			lastHash: this.lastHistoryHash,
 			changed,
@@ -172,7 +174,7 @@ export class SVNViewStateManager {
 		// Only update the stored hash if we're not in loading state
 		if (!state.showLoading) {
 			this.lastHistoryHash = currentHistoryHash;
-			console.log('[SVN StateManager] Updated lastHistoryHash to:', this.lastHistoryHash);
+			logInfo('SVN StateManager', 'Updated lastHistoryHash to:', this.lastHistoryHash);
 		}
 		return changed;
 	}

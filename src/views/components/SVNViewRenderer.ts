@@ -15,6 +15,7 @@ import { SVNViewLayoutManager } from './SVNViewLayoutManager';
 import { SVNViewStatusManager } from './SVNViewStatusManager';
 import { SVNViewHistoryManager } from './SVNViewHistoryManager';
 import type ObsidianSvnPlugin from '../../main';
+import { logDebug, logInfo } from '../../utils/logger';
 
 /**
  * Main renderer component that coordinates all rendering logic for the FileHistoryView
@@ -91,7 +92,7 @@ export class SVNViewRenderer {
 	async handleUIStateChange(state: UIState, currentFile: TFile | null): Promise<void> {
 		// Prevent overlapping state change handlers
 		if (this.isHandlingStateChange) {
-			console.log('[SVN ViewRenderer] Already handling state change, skipping duplicate');
+			logDebug('SVN ViewRenderer', 'Already handling state change, skipping duplicate');
 			return;
 		}
 		
@@ -100,7 +101,7 @@ export class SVNViewRenderer {
 		try {
 			// Check if we're in a user interaction protection window
 			if (this.stateManager.isInUserInteractionWindow()) {
-				console.log('[SVN ViewRenderer] Skipping UI update - user interaction in progress');
+				logInfo('SVN ViewRenderer', 'Skipping UI update - user interaction in progress');
 				return;
 			}
 			  // Override state data status with recent direct status if within protection window
@@ -172,7 +173,7 @@ export class SVNViewRenderer {
 		const contentType = this.stateManager.getContentType(state);
 		const historyChanged = contentType === 'history' && this.stateManager.hasHistoryChanged(state);
 		
-		console.log('[SVN ViewRenderer] Content analysis:', {
+		logInfo('SVN ViewRenderer', 'Content analysis:', {
 			contentType,
 			historyChanged,
 			showLoading: state.showLoading,
@@ -206,7 +207,7 @@ export class SVNViewRenderer {
 		
 		// Only rebuild if necessary
 		if (shouldRebuild) {
-			console.log('[SVN ViewRenderer] Rebuilding content area:', {
+			logInfo('SVN ViewRenderer', 'Rebuilding content area:', {
 				contentType,
 				lastContentType: this.stateManager.getLastContentType(),
 				showLoading: state.showLoading,
@@ -221,7 +222,7 @@ export class SVNViewRenderer {
 	 * Show repository setup UI
 	 */
 	showRepositorySetup(currentFile: TFile | null): void {
-		console.log('[SVN ViewRenderer] Showing repository setup');
+		logInfo('SVN ViewRenderer', 'Showing repository setup');
 		
 		// Clear the content area and show repository setup
 		const contentArea = this.layoutManager.getContentArea();

@@ -1,6 +1,7 @@
 import { TFile } from 'obsidian';
 import { SVNClient } from './SVNClient';
 import { SvnLogEntry, SvnInfo, SvnStatus } from '../types';
+import { logger } from '../utils/logger';
 
 export interface SVNFileData {
 	file: TFile;
@@ -42,7 +43,7 @@ export class SVNDataStore {
 		
 		// Register callback to clear DataStore cache when SVNClient cache is cleared
 		this.svnClient.setCacheInvalidationCallback(() => {
-			console.log('[SVN DataStore] Cache invalidation callback triggered from SVNClient');
+			logger.info('SVN DataStore', 'Cache invalidation callback triggered from SVNClient');
 			this.forceClearCache();
 		});
 	}
@@ -80,8 +81,8 @@ export class SVNDataStore {
 	 */
 	async loadFileData(file: TFile, options: DataLoadOptions = {}): Promise<SVNFileData> {
 		const filePath = file.path;
-		
-		console.log('[SVN DataStore] loadFileData called:', {
+
+		logger.info('SVN DataStore', 'loadFileData called:', {
 			filePath,
 			hasLoadingPromise: this.loadingPromises.has(filePath),
 			hasCachedData: this.dataCache.has(filePath)
@@ -89,9 +90,10 @@ export class SVNDataStore {
 		
 		// If already loading, return existing promise
 		if (this.loadingPromises.has(filePath)) {
-			console.log('[SVN DataStore] Returning existing loading promise for:', filePath);
-			return this.loadingPromises.get(filePath)!;		}
-		
+			logger.info('SVN DataStore', 'Returning existing loading promise for:', filePath);
+			return this.loadingPromises.get(filePath)!;
+		}
+
 		// TEMPORARY: Disable cache completely to debug the issue
 		/*
 		// Check if we have recent cached data
@@ -118,13 +120,13 @@ export class SVNDataStore {
 		}
 		*/
 		// Create loading promise
-		console.log('[SVN DataStore] Creating new loading promise for:', filePath);
+		logger.info('SVN DataStore', 'Creating new loading promise for:', filePath);
 		const loadingPromise = this.performDataLoad(file, options);
 		this.loadingPromises.set(filePath, loadingPromise);
 
 		try {
 			const data = await loadingPromise;
-			console.log('[SVN DataStore] Load completed for:', {
+			logger.info('SVN DataStore', 'Load completed for:', {
 				filePath,
 				isFileInSvn: data.isFileInSvn,
 				isWorkingCopy: data.isWorkingCopy
@@ -145,7 +147,7 @@ export class SVNDataStore {
 		
 		// Throttle rapid consecutive refreshes
 		if (now - lastRefresh < this.refreshThrottleMs) {
-			console.log(`[SVN DataStore] Throttling refresh for ${filePath} (last refresh ${now - lastRefresh}ms ago)`);
+			logger.info('SVN DataStore', `Throttling refresh for ${filePath} (last refresh ${now - lastRefresh}ms ago)`);
 			// Return existing cached data or current loading promise if available
 			const cached = this.dataCache.get(filePath);
 			if (cached) return cached;
@@ -153,8 +155,8 @@ export class SVNDataStore {
 			const loadingPromise = this.loadingPromises.get(filePath);
 			if (loadingPromise) return loadingPromise;
 		}
-		
-		console.log(`[SVN DataStore] Refreshing data for ${filePath}`);
+
+		logger.info('SVN DataStore', `Refreshing data for ${filePath}`);
 		this.lastRefreshTime.set(filePath, now);
 		
 		// Clear existing cache
@@ -175,7 +177,7 @@ export class SVNDataStore {
 	 * Force clear all cached data immediately (for use after SVN operations)
 	 */
 	forceClearCache(): void {
-		console.log('[SVN DataStore] Force clearing all cache data');
+		logger.info('SVN DataStore', 'Force clearing all cache data');
 		this.dataCache.clear();
 		this.loadingPromises.clear();
 		this.lastRefreshTime.clear();
@@ -220,7 +222,7 @@ export class SVNDataStore {
 				this.svnClient.isFileInSvn(filePath).catch(() => false)
 			]);
 
-			console.log('[SVN DataStore] Core checks completed:', {
+			logger.info('SVN DataStore', 'Core checks completed:', {
 				filePath,
 				isWorkingCopy,
 				isFileInSvn
@@ -267,15 +269,15 @@ export class SVNDataStore {
 			// If status is empty and there's no info, the file is definitely unversioned
 			let finalIsFileInSvn = isFileInSvn;
 			if (isFileInSvn && status.length === 0 && !info) {
-				console.log('[SVN DataStore] Re-evaluating isFileInSvn: empty status and no info suggests unversioned file');
+				logger.info('SVN DataStore', 'Re-evaluating isFileInSvn: empty status and no info suggests unversioned file');
 				// Double-check with a direct status call to be absolutely sure
 				try {
 					const recheck = await this.svnClient.isFileInSvn(filePath);
 					finalIsFileInSvn = recheck;
-					console.log('[SVN DataStore] Re-check result:', { filePath, originalCheck: isFileInSvn, recheckResult: recheck });
+					logger.info('SVN DataStore', 'Re-check result:', { filePath, originalCheck: isFileInSvn, recheckResult: recheck });
 				} catch (error) {
 					finalIsFileInSvn = false;
-					console.log('[SVN DataStore] Re-check failed, assuming unversioned:', error.message);
+					logger.info('SVN DataStore', 'Re-check failed, assuming unversioned:', error.message);
 				}
 			}
 
@@ -297,7 +299,7 @@ export class SVNDataStore {
 				currentRevision,
 				lastUpdateTime: Date.now()
 			};// Cache and notify
-			console.log('[SVN DataStore] Final data loaded:', {
+			logger.info('SVN DataStore', 'Final data loaded:', {
 				filePath: filePath,
 				isWorkingCopy: finalData.isWorkingCopy,
 				isFileInSvn: finalData.isFileInSvn,

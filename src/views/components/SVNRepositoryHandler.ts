@@ -3,6 +3,7 @@ import { SVNClient } from '../../services/SVNClient';
 import type ObsidianSvnPlugin from '../../main';
 import { CheckoutModal } from '../../modals/CheckoutModal';
 import { join } from 'path';
+import { logError } from 'src/utils/logger';
 
 export class SVNRepositoryHandler {
     private plugin: ObsidianSvnPlugin;
@@ -18,8 +19,8 @@ export class SVNRepositoryHandler {
     }    async validateRepository(): Promise<{ isValid: boolean; repoPath?: string; error?: string }> {
         try {
             const settings = this.plugin.settings;
-            //debug('RepositoryHandler', validateRepository - full settings:', settings);
-            //debug('RepositoryHandler', validateRepository - repositoryName:', settings.repositoryName);
+            //logger.debug('RepositoryHandler', validateRepository - full settings:', settings);
+            //logger.debug('RepositoryHandler', validateRepository - repositoryName:', settings.repositoryName);
 
             if (!settings.repositoryName) {
                 return { 
@@ -39,8 +40,8 @@ export class SVNRepositoryHandler {
             const hiddenRepoName = `.${settings.repositoryName}`;
             const repoPath = join(vaultPath, hiddenRepoName);
 
-            //debug('RepositoryHandler', validateRepository - hiddenRepoName:', hiddenRepoName);
-            //debug('RepositoryHandler', validateRepository - repoPath:', repoPath);
+            //logger.debug('RepositoryHandler', validateRepository - hiddenRepoName:', hiddenRepoName);
+            //logger.debug('RepositoryHandler', validateRepository - repoPath:', repoPath);
 
             // Check if repository exists
             const fs = require('fs');
@@ -109,7 +110,7 @@ export class SVNRepositoryHandler {
                         (this.plugin.app as any).setting.open();
                         (this.plugin.app as any).setting.openTabById(this.plugin.manifest.id);
                     } catch (error) {
-                        error('General', 'Failed to open settings:', error);
+                        logError('SVNRepositoryHandler', 'Failed to open settings:', error);
                     }
                 });
         } else {
@@ -200,7 +201,7 @@ export class SVNRepositoryHandler {
             
             await this.initWorkingCopy(repoPath, currentFile);
         } catch (error) {
-            error('General', 'Failed to create repository:', error);
+            logError('SVNRepositoryHandler', 'Failed to create repository:', error);
             new Notice(`Failed to create repository: ${error.message}`);
         }
     }
@@ -219,7 +220,7 @@ export class SVNRepositoryHandler {
             new Notice('Repository checked out successfully');
             this.onRefresh();
         } catch (error) {
-            error('General', 'Failed to checkout repository:', error);
+            logError('SVNRepositoryHandler', 'Failed to checkout repository:', error);
             new Notice(`Failed to checkout repository: ${error.message}`);
         }
     }    private async initWorkingCopy(repoPath: string, currentFile: TFile | null): Promise<void> {
@@ -237,7 +238,7 @@ export class SVNRepositoryHandler {
             new Notice('Working copy initialized successfully');
             this.onRefresh();
         } catch (error) {
-            error('General', 'Failed to initialize working copy:', error);
+            logError('SVNRepositoryHandler', 'Failed to initialize working copy:', error);
             new Notice(`Failed to initialize working copy: ${error.message}`);
         }
     }    private async showCheckoutModal(currentFile: TFile | null): Promise<void> {
@@ -280,7 +281,7 @@ export class SVNRepositoryHandler {
             new Notice('External repository checked out successfully');
             this.onRefresh();
         } catch (error) {
-            error('General', 'Failed to checkout external repository:', error);
+            logError('SVNRepositoryHandler', 'Failed to checkout external repository:', error);
             new Notice(`Failed to checkout repository: ${error.message}`);
         }
     }

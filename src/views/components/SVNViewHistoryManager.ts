@@ -4,6 +4,7 @@ import { SVNFileData } from '../../services/SVNDataStore';
 import { UIState } from '../SVNUIController';
 import { SVNHistoryRenderer, SVNFileStateRenderer, SVNRepositoryHandler } from '.';
 import type ObsidianSvnPlugin from '../../main';
+import { logDebug, logInfo } from '../../utils/logger';
 
 /**
  * Manages history rendering and content display for the FileHistoryView
@@ -91,7 +92,7 @@ export class SVNViewHistoryManager {
 	 * Render history data efficiently
 	 */
 	renderHistoryWithData(container: HTMLElement, data: SVNFileData, currentFile: TFile | null): void {
-		console.log('[SVN HistoryManager] renderHistoryWithData called:', {
+		logInfo('SVN HistoryManager', 'renderHistoryWithData called:', {
 			filePath: currentFile?.path,
 			historyCount: data.history?.length || 0,
 			historyRevisions: data.history?.map(h => ({ revision: h.revision, message: h.message?.substring(0, 30) })) || [],

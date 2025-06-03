@@ -1,6 +1,7 @@
 import { Notice } from 'obsidian';
 import { CreateRepoModal } from '../modals';
 import type ObsidianSvnPlugin from '../main';
+import { logError } from 'src/utils/logger';
 
 export function registerCommands(plugin: ObsidianSvnPlugin) {
 	// Use the plugin's SVN client instance instead of creating a new one
@@ -28,7 +29,7 @@ export function registerCommands(plugin: ObsidianSvnPlugin) {
 				// Open the FileHistoryView
 				await plugin.activateView();
 			} catch (error) {
-				error('General', 'SVN show history error:', error);
+				logError('SVNCommands', 'SVN show history error:', error);
 				new Notice(`Error: ${error.message}`);
 			}
 		}
@@ -56,7 +57,7 @@ export function registerCommands(plugin: ObsidianSvnPlugin) {
 						});
 				}
 			} catch (error) {
-				error('General', 'SVN revert error:', error);
+				logError('SVNCommands', 'SVN revert error:', error);
 				new Notice(`Error: ${error.message}`);
 			}
 		}
@@ -82,7 +83,7 @@ export function registerCommands(plugin: ObsidianSvnPlugin) {
 					plugin.refreshFileHistoryViews();
 				}, 500);
 			} catch (error) {
-				error('General', 'SVN commit error:', error);
+				logError('SVNCommands', 'SVN commit error:', error);
 				new Notice(`Error: ${error.message}`);
 			}
 		}
@@ -114,7 +115,7 @@ export function registerCommands(plugin: ObsidianSvnPlugin) {
 					plugin.refreshFileHistoryViews();
 				}, 500);
 			} catch (error) {
-				error('General', 'SVN commit with message error:', error);
+				logError('SVNCommands', 'SVN commit with message error:', error);
 				new Notice(`Error: ${error.message}`);
 			}
 		}
@@ -139,7 +140,7 @@ export function registerCommands(plugin: ObsidianSvnPlugin) {
 					new Notice(`SVN Status:\n${statusText}`);
 				}
 			} catch (error) {
-				error('General', 'SVN status error:', error);
+				logError('SVNCommands', 'SVN status error:', error);
 				new Notice(`Error: ${error.message}`);
 			}
 		}
@@ -173,7 +174,7 @@ export function registerCommands(plugin: ObsidianSvnPlugin) {
 				};
 				diffModal.open();
 			} catch (error) {
-				error('General', 'SVN diff error:', error);
+				logError('SVNCommands', 'SVN diff error:', error);
 				new Notice(`Error: ${error.message}`);
 			}
 		}
@@ -198,7 +199,7 @@ export function registerCommands(plugin: ObsidianSvnPlugin) {
 				await execPromise(`${plugin.settings.svnBinaryPath} add "${filePath}"`);
 				new Notice('File added to SVN');
 			} catch (error) {
-				error('General', 'SVN add file error:', error);
+				logError('SVNCommands', 'SVN add file error:', error);
 				new Notice(`Error: ${error.message}`);
 			}
 		}
@@ -222,7 +223,7 @@ export function registerCommands(plugin: ObsidianSvnPlugin) {
 							const hiddenRepoName = `.${cleanRepoName}`;
 							new Notice(`SVN repository '${hiddenRepoName}' created successfully!`);
 						} catch (error) {
-							error('General', 'SVN create repository error:', error);
+							logError('SVNCommands', 'SVN create repository error:', error);
 							new Notice(`Error creating repository: ${error.message}`);
 						}
 					},
@@ -232,8 +233,121 @@ export function registerCommands(plugin: ObsidianSvnPlugin) {
 				);
 				modal.open();
 			} catch (error) {
-				error('General', 'SVN create repository modal error:', error);
+				logError('SVNCommands', 'SVN create repository modal error:', error);
 				new Notice(`Error: ${error.message}`);
+			}
+		}
+	});
+
+	// Debug and logging commands
+	plugin.addCommand({
+		id: 'svn-dump-debug-logs',
+		name: 'Dump debug logs to file',
+		callback: async () => {
+			try {
+				const { logger } = require('../utils/logger');
+				await logger.dumpLogsToFile();
+				new Notice('Debug logs dumped to file successfully. Check .obsidian/plugins/obsidian-subversion/svn-debug.log');
+			} catch (error) {
+				logError('SVNCommands', 'Failed to dump debug logs:', error);
+				new Notice(`Error dumping logs: ${error.message}`);
+			}
+		}
+	});
+
+	plugin.addCommand({
+		id: 'svn-clear-debug-logs',
+		name: 'Clear debug logs buffer',
+		callback: async () => {
+			try {
+				const { logger } = require('../utils/logger');
+				const stats = logger.getLogStats();
+				logger.clearLogs();
+				new Notice(`Cleared ${stats.total} log entries from memory buffer.`);
+			} catch (error) {
+				logError('SVNCommands', 'Failed to clear debug logs:', error);
+				new Notice(`Error clearing logs: ${error.message}`);
+			}
+		}
+	});
+
+	plugin.addCommand({
+		id: 'svn-show-log-stats',
+		name: 'Show logging statistics',
+		callback: async () => {
+			try {
+				const { logger } = require('../utils/logger');
+				const stats = logger.getLogStats();
+				const loggerInfo = logger.getLoggerInfo();
+				const fileSize = await logger.getLogFileSize();
+				
+				const byLevelText = Object.entries(stats.byLevel)
+					.map(([level, count]) => `${level}: ${count}`)
+					.join(', ');
+				
+				const message = `Log Statistics:
+• Total entries: ${stats.total}
+• By level: ${byLevelText}
+• Buffer size: ${loggerInfo.bufferSize}/${logger.maxBufferSize || 100}
+• Log file: ${loggerInfo.logFilePath || 'Not set'}
+• Log file size: ${(fileSize / 1024).toFixed(1)} KB`;
+				
+				new Notice(message, 8000);
+			} catch (error) {
+				logError('SVNCommands', 'Failed to get log stats:', error);
+				new Notice(`Error getting log stats: ${error.message}`);
+			}
+		}
+	});
+
+	plugin.addCommand({
+		id: 'svn-show-recent-logs',
+		name: 'Show recent debug logs',
+		callback: async () => {
+			try {
+				const { logger } = require('../utils/logger');
+				const recentContent = await logger.getLogFileContent(30);
+				
+				// Create a modal to show recent logs
+				const modal = new (require('obsidian').Modal)(plugin.app);
+				modal.onOpen = () => {
+					const { contentEl } = modal;
+					contentEl.createEl('h3', { text: 'Recent Debug Logs (Last 30 lines)' });
+					
+					const pre = contentEl.createEl('pre', { 
+						cls: 'svn-logs-content',
+						attr: { style: 'max-height: 400px; overflow-y: auto; font-family: monospace; background: var(--background-secondary); padding: 10px; border-radius: 5px;' }
+					});
+					pre.createEl('code', { text: recentContent });
+					
+					const buttonContainer = contentEl.createEl('div', { 
+						attr: { style: 'margin-top: 10px; text-align: right;' }
+					});
+					
+					const refreshButton = buttonContainer.createEl('button', { text: 'Refresh' });
+					refreshButton.addEventListener('click', async () => {
+						const newContent = await logger.getLogFileContent(30);
+						pre.empty();
+						pre.createEl('code', { text: newContent });
+					});
+					
+					const dumpButton = buttonContainer.createEl('button', { 
+						text: 'Dump Current Logs',
+						attr: { style: 'margin-left: 10px;' }
+					});
+					dumpButton.addEventListener('click', async () => {
+						try {
+							await logger.dumpLogsToFile();
+							new Notice('Logs dumped successfully');
+						} catch (error) {
+							new Notice(`Error dumping logs: ${error.message}`);
+						}
+					});
+				};
+				modal.open();
+			} catch (error) {
+				logError('SVNCommands', 'Failed to show recent logs:', error);
+				new Notice(`Error showing logs: ${error.message}`);
 			}
 		}
 	});

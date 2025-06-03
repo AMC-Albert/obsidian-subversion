@@ -1,6 +1,7 @@
 import { TFile } from 'obsidian';
 import { SVNClient } from '../../services/SVNClient';
 import type ObsidianSvnPlugin from '../../main';
+import { logError } from 'src/utils/logger';
 
 export class SVNInfoPanel {
 	private plugin: ObsidianSvnPlugin;
@@ -97,7 +98,7 @@ export class SVNInfoPanel {
 			}
 			
 		} catch (error) {
-			error('General', 'Error getting SVN info:', error);
+			logError('SVNInfoPanel', 'Error getting SVN info:', error);
 			this.panelElement.createEl('p', { 
 				text: `Error: ${error.message}`,
 				cls: 'svn-info-error'

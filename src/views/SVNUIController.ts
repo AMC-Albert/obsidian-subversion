@@ -2,6 +2,7 @@ import { TFile } from 'obsidian';
 import { SVNDataStore, SVNFileData } from '../services/SVNDataStore';
 import type ObsidianSvnPlugin from '../main';
 import { SVNClient } from '../services/SVNClient';
+import { logDebug, logError, logInfo } from '../utils/logger';
 
 export interface UIState {
 	isLoading: boolean;
@@ -98,7 +99,7 @@ export class SVNUIController {
 		}
 		// Subscribe to data updates
 		this.unsubscribeDataStore = this.dataStore.subscribe(file.path, (data) => {
-			console.log('[SVN UIController] Data subscription callback triggered:', {
+			logDebug('SVN UIController', 'Data subscription callback triggered:', {
 				filePath: file.path,
 				currentFilePath: this.currentFile?.path,
 				dataIsLoading: data.isLoading,
@@ -126,7 +127,7 @@ export class SVNUIController {
 				const dataChanged = this.uiState.data !== newStateData.data;
 				
 				if (isLoadingChanged || showLoadingChanged || errorChanged || dataChanged) {
-					console.log('[SVN UIController] Updating UI state due to data changes:', {
+					logInfo('SVN UIController', 'Updating UI state due to data changes:', {
 						isLoadingChanged,
 						showLoadingChanged,
 						errorChanged,
@@ -134,7 +135,7 @@ export class SVNUIController {
 					});
 					this.updateUIState(newStateData);
 				} else {
-					console.log('[SVN UIController] Skipping UI update, no meaningful changes detected');
+					logInfo('SVN UIController', 'Skipping UI update, no meaningful changes detected');
 				}
 			}
 		});
@@ -147,7 +148,7 @@ export class SVNUIController {
 				includeInfo: true
 			});
 		} catch (error) {
-			console.error('Error loading SVN data:', error);
+			logError('SVNUIController', 'Error loading SVN data:', error);
 			if (this.currentFile?.path === file.path) {
 				this.updateUIState({
 					isLoading: false,
@@ -163,7 +164,7 @@ export class SVNUIController {
 	 * Refresh data for current file
 	 */
 	async refreshCurrentFile(): Promise<void> {
-		console.log('[SVN UIController] refreshCurrentFile called:', {
+		logInfo('SVN UIController', 'refreshCurrentFile called:', {
 			currentFile: this.currentFile?.path,
 			timestamp: new Date().toISOString()
 		});
@@ -184,7 +185,7 @@ export class SVNUIController {
 				includeInfo: true
 			});
 		} catch (error) {
-			console.error('Error refreshing SVN data:', error);
+			logError('SVNUIController', 'Error refreshing SVN data:', error);
 			this.updateUIState({
 				...this.uiState,
 				isLoading: false,
@@ -247,7 +248,7 @@ export class SVNUIController {
 				(newState.isLoading !== undefined && newState.isLoading !== this.uiState.isLoading);
 			
 			if (!isLoadingTransition) {
-				console.log('[SVN UIController] Throttling UI update, too frequent');
+				logDebug('SVN UIController', 'Throttling UI update, too frequent');
 				return;
 			}
 		}
@@ -256,7 +257,7 @@ export class SVNUIController {
 		this.uiState = { ...this.uiState, ...newState };
 		this.lastStateUpdateTime = now;
 		
-		console.log('[SVN UIController] State update:', {
+		logDebug('SVN UIController', 'State update:', {
 			old: {
 				isLoading: oldState.isLoading,
 				showLoading: oldState.showLoading,
@@ -277,7 +278,7 @@ export class SVNUIController {
 			try {
 				callback(this.uiState);
 			} catch (error) {
-				console.error('Error in UI state callback:', error);
+				logError('SVNUIController', 'Error in UI state callback:', error);
 			}
 		});
 	}

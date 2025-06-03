@@ -1,11 +1,8 @@
 import { ButtonComponent, TFile, Notice } from 'obsidian';
-import { debug, info, warn, error } from '../utils/logger';
 import { SVNClient } from '../../services/SVNClient';
-import { debug, info, warn, error } from '../utils/logger';
 import type ObsidianSvnPlugin from '../../main';
-import { debug, info, warn, error } from '../utils/logger';
 import { SVNFileActions } from './SVNFileActions';
-import { debug, info, warn, error } from '../utils/logger';
+import { logger, logInfo } from '../../utils/logger';
 
 export class SVNToolbar {
 	private plugin: ObsidianSvnPlugin;
@@ -87,7 +84,7 @@ export class SVNToolbar {
 	 * Enable or disable the toolbar
 	 */
 	setEnabled(enabled: boolean): void {
-		console.log(`[SVN Toolbar] Setting toolbar enabled: ${enabled}`);
+		logInfo('SVNToolbar', `Setting toolbar enabled: ${enabled}`);
 		const container = this.containerEl;
 		if (!container) return;
 		
@@ -124,4 +121,3 @@ export class SVNToolbar {
 		});
 	}
 }
-
