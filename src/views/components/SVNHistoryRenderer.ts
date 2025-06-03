@@ -15,7 +15,6 @@ export class SVNHistoryRenderer {
 		this.plugin = plugin;
 		this.refreshCallback = refreshCallback;
 	}
-	
 	/**
 	 * Add action buttons for a history item (used by data bus system)
 	 */
@@ -33,24 +32,6 @@ export class SVNHistoryRenderer {
 				this.showDiff(filePath, parseInt(history[index - 1].revision), parseInt(entry.revision));
 			});
 		}
-
-		// Checkout button  
-		const checkoutBtn = new ButtonComponent(actionsEl)
-			.setIcon('circle-arrow-down')
-			.setTooltip(`Checkout revision ${entry.revision}`)
-			.setClass('clickable-icon');
-		  
-		// Add click handler directly to the button element
-		checkoutBtn.buttonEl.addEventListener('click', async (evt) => {
-			evt.preventDefault();
-			evt.stopPropagation();
-			
-			try {
-				await this.checkoutRevision(filePath, entry.revision);
-			} catch (error) {
-				logError('Error in checkout button handler:', error);
-			}
-		});
 	}
 
 	private showDiff(filePath: string, fromRevision: number, toRevision: number): void {
@@ -61,7 +42,9 @@ export class SVNHistoryRenderer {
 			logError('Error getting diff:', error);
 			// Could show a notice here
 		});
-	}    private async checkoutRevision(filePath: string, revision: string): Promise<void> {
+	}
+	
+	async checkoutRevision(filePath: string, revision: string): Promise<void> {
 		try {
 			// Check if file has modifications before checkout
 			let hadModifications = false;

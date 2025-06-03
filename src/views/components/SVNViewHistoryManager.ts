@@ -200,18 +200,35 @@ export class SVNViewHistoryManager {
 				cls: 'svn-delta-symbol'
 			});
 			repoSizeEl.createEl('span', { 
-				text: ` ${this.formatFileSize(entry.repoSize)}`
+				text: `${this.formatFileSize(entry.repoSize)}`
 			});
 		}
 		// Add commit message
 		if (entry.message) {
-			const messageEl = contentEl.createEl('div', { cls: 'svn-message' });
+			const messageEl = contentEl.createEl('span', { cls: 'svn-message' });
 			messageEl.setText(entry.message);
 			setTooltip(messageEl, 'Commit message');
 		}
-
-		// Add action buttons
+		// Make the entire item clickable to checkout this revision
 		if (currentFile) {
+			listItem.addClass('clickable-history-item');
+			listItem.addEventListener('click', async (evt) => {
+				// Don't trigger checkout if clicking on action buttons
+				if ((evt.target as HTMLElement).closest('.svn-history-actions')) {
+					return;
+				}
+				
+				evt.preventDefault();
+				evt.stopPropagation();
+				
+				try {
+					await this.historyRenderer.checkoutRevision(currentFile.path, entry.revision);
+				} catch (error) {
+					console.error('Error checking out revision:', error);
+				}
+			});
+			
+			// Add action buttons (diff only, no checkout)
 			const actionsEl = listItem.createEl('div', { cls: 'svn-history-actions' });
 			this.historyRenderer.addHistoryItemActions(actionsEl, currentFile.path, entry, index, fullHistory);
 		}
