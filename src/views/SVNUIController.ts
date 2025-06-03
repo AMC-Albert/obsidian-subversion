@@ -103,7 +103,10 @@ export class SVNUIController {
 				currentFilePath: this.currentFile?.path,
 				dataIsLoading: data.isLoading,
 				statusCount: data.status?.length || 0,
-				statusItems: data.status?.map(s => ({ path: s.filePath, status: s.status })) || []
+				statusItems: data.status?.map(s => ({ path: s.filePath, status: s.status })) || [],
+				historyCount: data.history?.length || 0,
+				historyRevisions: data.history?.map(h => ({ revision: h.revision, message: h.message?.substring(0, 50) })) || [],
+				lastUpdateTime: data.lastUpdateTime
 			});
 			
 			// Only update if this is still the current file

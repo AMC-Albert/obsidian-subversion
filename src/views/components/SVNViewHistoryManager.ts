@@ -87,11 +87,17 @@ export class SVNViewHistoryManager {
 
 		this.renderHistoryWithData(container, data, currentFile);
 	}
-
 	/**
 	 * Render history data efficiently
 	 */
 	renderHistoryWithData(container: HTMLElement, data: SVNFileData, currentFile: TFile | null): void {
+		console.log('[SVN HistoryManager] renderHistoryWithData called:', {
+			filePath: currentFile?.path,
+			historyCount: data.history?.length || 0,
+			historyRevisions: data.history?.map(h => ({ revision: h.revision, message: h.message?.substring(0, 30) })) || [],
+			lastUpdateTime: data.lastUpdateTime
+		});
+		
 		// Check if we can reuse existing history list
 		let historyList = container.querySelector('.svn-history-list') as HTMLElement;
 		const existingItems = historyList?.querySelectorAll('.svn-history-item') || [];

@@ -50,7 +50,7 @@ export class SVNView extends ItemView {
 		this.uiController = new SVNUIController(plugin, this.svnClient);
 		
 		// Initialize all component instances first
-		this.fileActions = new SVNFileActions(plugin, this.svnClient, () => this.refreshStatus());
+		this.fileActions = new SVNFileActions(plugin, this.svnClient, () => this.refreshData());
 		this.toolbar = new SVNToolbar(plugin, this.svnClient, this.fileActions, () => this.refreshData(), () => this.showRepositorySetup());
 		this.statusDisplay = new SVNStatusDisplay(this.svnClient);
 		this.historyRenderer = new SVNHistoryRenderer(this.svnClient, plugin, () => this.refreshData());
@@ -221,7 +221,6 @@ export class SVNView extends ItemView {
 	}
 
 	// === PUBLIC API METHODS (Expected by main.ts) === //
-
 	/**
 	 * Refresh all data (full refresh)
 	 */

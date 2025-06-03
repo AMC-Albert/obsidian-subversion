@@ -1,6 +1,6 @@
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import { join, dirname, isAbsolute } from 'path'; // Added isAbsolute
+import { join, dirname, isAbsolute, relative } from 'path'; // Added relative
 import { existsSync } from 'fs';
 import { SvnLogEntry, SvnStatus, SvnCommandResult, SvnBlameEntry, SvnInfo } from '../types';
 import { SvnError, SvnNotInstalledError, NotWorkingCopyError, SvnCommandError } from '../utils/errors';
@@ -63,16 +63,52 @@ export class SVNClient {
 		try {
 			const absolutePath = this.resolveAbsolutePath(filePath);
 			const workingCopyRoot = this.findSvnWorkingCopy(absolutePath);
-			
 			if (!workingCopyRoot) {
-				throw new Error('File is not in an SVN working copy');
-			}
+			throw new Error('File is not in an SVN working copy');
+		}				// Get the repository URL for this file to query history directly from repository
+		let repositoryUrl = null;
+		try {
+			// Get repository root and relative path to construct full repository URL
+			const infoResult = await execPromise(`${this.svnPath} info --xml "${workingCopyRoot}"`, { cwd: workingCopyRoot });
+			const rootMatch = infoResult.stdout.match(/<root>(.*?)<\/root>/);
 			
-			// Get complete history from repository (not just working copy)
-			const command = `${this.svnPath} log --xml -r HEAD:1 "${absolutePath}"`;
-			const { stdout } = await execPromise(command, { cwd: workingCopyRoot });
-			return this.parseXmlLog(stdout);
+			if (rootMatch) {
+				const repositoryRoot = rootMatch[1];
+				// Calculate relative path from working copy root to file
+				const relativePath = relative(workingCopyRoot, absolutePath).replace(/\\/g, '/');
+				repositoryUrl = `${repositoryRoot}/${relativePath}`;
+				console.log('[SVN Client] Constructed repository URL:', { repositoryRoot, relativePath, repositoryUrl });
+			}
+		} catch (infoError) {
+			console.warn('[SVN Client] Failed to get repository URL, using local path:', infoError.message);
+		}
+		
+		// Get complete history from repository
+		// Use repository URL if available, otherwise fall back to local path
+		const targetPath = repositoryUrl || absolutePath;
+		const command = `${this.svnPath} log --xml --verbose --limit 100 "${targetPath}"`;
+		console.log('[SVN Client] getFileHistory debug:', {
+			originalFilePath: filePath,
+			absolutePath,
+			workingCopyRoot,
+			repositoryUrl,
+			targetPath,
+			command,
+			svnPath: this.svnPath,
+			note: 'Using repository URL for direct repository query'
+		});
+
+		console.log('[SVN Client] Executing getFileHistory command:', command);
+		console.log('[SVN Client] Working directory:', workingCopyRoot);
+		const { stdout } = await execPromise(command, { cwd: workingCopyRoot });
+		console.log('[SVN Client] getFileHistory raw XML output:', stdout);
+		
+		const entries = this.parseXmlLog(stdout);
+		console.log('[SVN Client] getFileHistory parsed entries:', entries);
+			
+			return entries;
 		} catch (error) {
+			console.error('[SVN Client] getFileHistory error:', { filePath, error: error.message });
 			// Check if this is a "file not in SVN" error and preserve the original message
 			const errorMessage = error.message.toLowerCase();
 			if (errorMessage.includes('node was not found') || 
@@ -123,7 +159,9 @@ export class SVNClient {
 		} catch (error) {
 			throw new Error(`Failed to checkout revision ${revision}: ${error.message}`);
 		}
-	}	async commitFile(filePath: string, message: string): Promise<void> {
+	}
+	
+	async commitFile(filePath: string, message: string): Promise<void> {
 		const fullPath = this.resolveAbsolutePath(filePath);
 		console.log('[SVN Client] commitFile called with:', { fullPath, message });
 
@@ -155,7 +193,9 @@ export class SVNClient {
 		
 		// Clear cache after commit operation to ensure fresh status data
 		this.clearStatusCache();
-	}async ensureParentDirectoriesAreVersioned(filePath: string): Promise<void> {
+	}
+	
+	async ensureParentDirectoriesAreVersioned(filePath: string): Promise<void> {
 		let parentDir = dirname(filePath);
 		const repoRoot = this.findSvnWorkingCopy(filePath);
 
@@ -719,25 +759,36 @@ export class SVNClient {
 	private parseXmlLog(xmlOutput: string): SvnLogEntry[] {
 		const entries: SvnLogEntry[] = [];
 		
+		console.log('[SVN Client] parseXmlLog: Starting to parse XML, length:', xmlOutput.length);
+		console.log('[SVN Client] parseXmlLog: First 500 chars:', xmlOutput.substring(0, 500));
+		
 		// Simple XML parsing for SVN log entries
 		const logEntryRegex = /<logentry[^>]*revision="([^"]+)"[^>]*>([\s\S]*?)<\/logentry>/g;
 		let match;
+		let matchCount = 0;
 		
 		while ((match = logEntryRegex.exec(xmlOutput)) !== null) {
+			matchCount++;
 			const entryContent = match[2];
 			const revision = match[1];
+			
+			console.log('[SVN Client] parseXmlLog: Found logentry', matchCount, 'revision:', revision);
 			
 			const authorMatch = entryContent.match(/<author>(.*?)<\/author>/);
 			const dateMatch = entryContent.match(/<date>(.*?)<\/date>/);
 			const messageMatch = entryContent.match(/<msg>([\s\S]*?)<\/msg>/);
 			
-			entries.push({
+			const entry = {
 				revision: revision,
 				author: authorMatch ? authorMatch[1] : 'Unknown',
 				date: dateMatch ? dateMatch[1] : '',
 				message: messageMatch ? messageMatch[1].trim() : ''
-			});
-		}        
+			};
+			
+			console.log('[SVN Client] parseXmlLog: Parsed entry:', entry);
+			entries.push(entry);		}        
+		
+		console.log('[SVN Client] parseXmlLog: Finished parsing, found', entries.length, 'entries');
 		return entries;
 	}
 

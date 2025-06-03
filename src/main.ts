@@ -322,11 +322,12 @@ export default class ObsidianSvnPlugin extends Plugin {
 		let refreshedCount = 0;
 		this.app.workspace.iterateAllLeaves(leaf => {
 			if (leaf.view instanceof FileHistoryView) {
-				leaf.view.refreshStatus();
+				// Use refreshData instead of refreshStatus to ensure history is reloaded
+				leaf.view.refreshData();
 				refreshedCount++;
 			}
 		});
-		console.log(`Refreshed status in ${refreshedCount} file history views`);
+		console.log(`Refreshed data in ${refreshedCount} file history views`);
 	}
 
 	/**

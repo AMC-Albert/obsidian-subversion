@@ -168,10 +168,17 @@ export class SVNViewRenderer {
 	private updateContentArea(state: UIState, currentFile: TFile | null): void {
 		const contentArea = this.layoutManager.getContentArea();
 		if (!contentArea) return;
-		
 		// Determine content type for intelligent updates
 		const contentType = this.stateManager.getContentType(state);
 		const historyChanged = contentType === 'history' && this.stateManager.hasHistoryChanged(state);
+		
+		console.log('[SVN ViewRenderer] Content analysis:', {
+			contentType,
+			historyChanged,
+			showLoading: state.showLoading,
+			hasData: !!state.data,
+			historyCount: state.data?.history?.length || 0
+		});
 		
 		// Decide if we need to rebuild the content area
 		let shouldRebuild = false;

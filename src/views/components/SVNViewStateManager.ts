@@ -145,9 +145,9 @@ export class SVNViewStateManager {
 
 	/**
 	 * Check if history data has meaningfully changed
-	 */
-	hasHistoryChanged(state: UIState): boolean {
+	 */	hasHistoryChanged(state: UIState): boolean {
 		if (!state.data) {
+			console.log('[SVN StateManager] hasHistoryChanged: No data, returning true');
 			return true;
 		}
 		
@@ -160,9 +160,19 @@ export class SVNViewStateManager {
 		
 		const currentHistoryHash = JSON.stringify(historyData);
 		const changed = currentHistoryHash !== this.lastHistoryHash;
+		
+		console.log('[SVN StateManager] hasHistoryChanged check:', {
+			currentHash: currentHistoryHash,
+			lastHash: this.lastHistoryHash,
+			changed,
+			showLoading: state.showLoading,
+			historyCount: state.data.history.length
+		});
+		
 		// Only update the stored hash if we're not in loading state
 		if (!state.showLoading) {
 			this.lastHistoryHash = currentHistoryHash;
+			console.log('[SVN StateManager] Updated lastHistoryHash to:', this.lastHistoryHash);
 		}
 		return changed;
 	}
