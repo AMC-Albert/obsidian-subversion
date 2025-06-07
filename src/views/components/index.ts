@@ -12,3 +12,8 @@ export { SVNViewLayoutManager } from './SVNViewLayoutManager';
 export { SVNViewStatusManager } from './SVNViewStatusManager';
 export { SVNViewHistoryManager } from './SVNViewHistoryManager';
 export { SVNViewRenderer } from './SVNViewRenderer';
+
+
+
+
+

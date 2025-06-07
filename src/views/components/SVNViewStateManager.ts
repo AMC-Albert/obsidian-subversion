@@ -1,5 +1,5 @@
 import { UIState } from '../SVNUIController';
-import { logDebug, logInfo } from '../../utils/logger';
+import { svnDebug, svnInfo, svnError } from '../../debug';
 
 /**
  * Manages state tracking and hash calculations for the FileHistoryView
@@ -149,7 +149,7 @@ export class SVNViewStateManager {
 	 * Check if history data has meaningfully changed
 	 */	hasHistoryChanged(state: UIState): boolean {
 		if (!state.data) {
-			logDebug('SVN StateManager', 'hasHistoryChanged: No data, returning true');
+			svnDebug('hasHistoryChanged: No data, returning true');
 			return true;
 		}
 		
@@ -163,7 +163,7 @@ export class SVNViewStateManager {
 		const currentHistoryHash = JSON.stringify(historyData);
 		const changed = currentHistoryHash !== this.lastHistoryHash;
 		
-		logInfo('SVN StateManager', 'hasHistoryChanged check:', {
+		svnInfo('hasHistoryChanged check:', {
 			currentHash: currentHistoryHash,
 			lastHash: this.lastHistoryHash,
 			changed,
@@ -174,7 +174,7 @@ export class SVNViewStateManager {
 		// Only update the stored hash if we're not in loading state
 		if (!state.showLoading) {
 			this.lastHistoryHash = currentHistoryHash;
-			logInfo('SVN StateManager', 'Updated lastHistoryHash to:', this.lastHistoryHash);
+			svnInfo('Updated lastHistoryHash to:', this.lastHistoryHash);
 		}
 		return changed;
 	}
@@ -255,3 +255,8 @@ export class SVNViewStateManager {
 		this.userInteractionWindow = 0;
 	}
 }
+
+
+
+
+

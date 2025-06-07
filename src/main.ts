@@ -5,7 +5,7 @@ import { registerCommands } from './core/commands';
 import { SVNClient } from './services/SVNClient';
 import { SVNView as FileHistoryView, FILE_HISTORY_VIEW_TYPE } from './views/SVNView';
 import { PLUGIN_CONSTANTS, DEFAULT_SETTINGS, SVN_ICON_SVG } from './core/constants';
-import { logger, LogLevel, logError } from './utils/logger';
+import { svnDebug, svnInfo, svnError } from './debug';
 
 /**
  * Main plugin class for Obsidian SVN integration
@@ -16,18 +16,13 @@ export default class ObsidianSvnPlugin extends Plugin {
 	svnClient: SVNClient;
 	private statusUpdateTimer: number | null = null;
 	private lastActiveFile: string | null = null;	async onload() {
-		// Initialize logger first
-		logger.initialize(this.app, LogLevel.DEBUG);
-		logger.info('Plugin', `Loading ${PLUGIN_CONSTANTS.PLUGIN_NAME} plugin`);
+		// Initialize debug logging
+		svnDebug(`Loading ${PLUGIN_CONSTANTS.PLUGIN_NAME} plugin`);
 		
 		// Register SVN icon
 		addIcon(PLUGIN_CONSTANTS.ICON_ID, SVN_ICON_SVG);
-		
-		// Load settings
+				// Load settings
 		await this.loadSettings();
-
-		// Configure logger based on settings
-		this.configureLogger();
 
 		// Initialize SVN client
 		this.initializeSvnClient();
@@ -60,27 +55,7 @@ export default class ObsidianSvnPlugin extends Plugin {
 		if (adapter instanceof FileSystemAdapter) {
 			this.svnClient.setVaultPath(adapter.getBasePath());
 		}
-	}
-	/**
-	 * Configure logger settings
-	 */
-	private configureLogger() {
-		// Set the vault path for log files using the same pattern as SVNClient
-		const adapter = this.app.vault.adapter;
-		if (adapter instanceof FileSystemAdapter) {
-			logger.setVaultPath(adapter.getBasePath());
-		}
-		
-		// Configure logger based on settings (can be enhanced with user preferences later)
-		logger.setLogLevel(LogLevel.DEBUG); // Could be made configurable
-		logger.setAutoDumpOnError(true);
-		logger.setMaxErrorsBeforeDump(5);
-		logger.startAutoDump(30); // Auto-dump every 30 minutes
-		
-		logger.info('Plugin', 'Logger configured with auto-dump functionality');
-	}
-
-	/**
+	}	/**
 	 * Register all UI components (views, ribbon, settings)
 	 */
 	private registerUI() {
@@ -195,14 +170,14 @@ export default class ObsidianSvnPlugin extends Plugin {
 		
 		// Don't automatically refresh views here - let user manually refresh if needed
 		// Automatic refresh on every settings keystroke creates race conditions
-		logger.info('[SVN Plugin]', 'SVN client updated, views will refresh on next user action');
+		svnDebug('SVN client updated, views will refresh on next user action');
 	}
 
 	/**
 	 * Notify views that settings have changed
 	 */
 	private notifyViewsOfSettingsChange() {
-		logger.info('[SVN Plugin]', 'Notifying views of settings change');
+		svnDebug('Notifying views of settings change');
 		let notifiedCount = 0;
 		this.app.workspace.iterateAllLeaves(leaf => {
 			if (leaf.view instanceof FileHistoryView) {
@@ -213,7 +188,7 @@ export default class ObsidianSvnPlugin extends Plugin {
 				}
 			}
 		});
-		logger.info(`[SVN Plugin]`, `Notified ${notifiedCount} file history views of settings change`);
+		svnInfo(`Notified ${notifiedCount} file history views of settings change`);
 	}
 
 	/**
@@ -303,7 +278,7 @@ export default class ObsidianSvnPlugin extends Plugin {
 						}, PLUGIN_CONSTANTS.UI.REFRESH_DELAY);
 					}
 				} catch (error) {
-					logError('SVNPlugin', 'Auto-commit failed:', error);
+					svnError('Auto-commit failed:', error);
 					// Don't show notice for auto-commit failures to avoid spam
 				}
 			})
@@ -319,11 +294,11 @@ export default class ObsidianSvnPlugin extends Plugin {
 	refreshFileHistoryViews() {
 		const now = Date.now();
 		if (now - this.lastRefreshTime < ObsidianSvnPlugin.REFRESH_THROTTLE_MS) {
-			logger.info(`[SVN Plugin]`, `Throttling refreshFileHistoryViews - last refresh ${now - this.lastRefreshTime}ms ago`);
+			svnDebug(`Throttling refreshFileHistoryViews - last refresh ${now - this.lastRefreshTime}ms ago`);
 			return;
 		}
 		
-		logger.info('[SVN Plugin]', 'refreshFileHistoryViews called');
+		svnDebug('refreshFileHistoryViews called');
 		this.lastRefreshTime = now;
 		
 		let refreshedCount = 0;
@@ -333,7 +308,7 @@ export default class ObsidianSvnPlugin extends Plugin {
 				refreshedCount++;
 			}
 		});
-		logger.info(`[SVN Plugin]`, `Refreshed ${refreshedCount} file history views`);
+		svnDebug(`Refreshed ${refreshedCount} file history views`);
 	}
 
 	/**
@@ -348,7 +323,7 @@ export default class ObsidianSvnPlugin extends Plugin {
 				refreshedCount++;
 			}
 		});
-		logger.info(`[SVN Plugin]`, `Refreshed data in ${refreshedCount} file history views`);
+		svnDebug(`Refreshed data in ${refreshedCount} file history views`);
 	}
 	/**
 	 * Cleanup resources on plugin unload
@@ -358,13 +333,11 @@ export default class ObsidianSvnPlugin extends Plugin {
 			clearTimeout(this.statusUpdateTimer);
 			this.statusUpdateTimer = null;
 		}
-		
-		// Stop logger auto-dump and dump final logs
-		logger.stopAutoDump();
-		logger.dumpLogsToFile().catch(err => {
-			console.error('Failed to dump final logs on unload:', err);
-		});
-		
-		logger.info('Plugin', 'Plugin cleanup completed');
+				// Cleanup debug logging
+		svnDebug('Plugin cleanup completed');
 	}
 }
+
+
+
+

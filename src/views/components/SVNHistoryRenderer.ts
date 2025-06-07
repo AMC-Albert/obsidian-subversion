@@ -3,7 +3,7 @@ import { ButtonComponent } from 'obsidian';
 import { SVNClient } from '../../services/SVNClient';
 import { DiffModal } from '../../modals/DiffModal';
 import { SvnLogEntry } from '../../types';
-import { logError, logInfo, logWarn } from '../../utils/logger';
+import { svnDebug, svnInfo, svnError } from '../../debug';
 
 export class SVNHistoryRenderer {
 	private svnClient: SVNClient;
@@ -39,7 +39,7 @@ export class SVNHistoryRenderer {
 		this.svnClient.getDiff(filePath, toRevision.toString()).then((diffContent: string) => {
 			new DiffModal(this.plugin.app, diffContent, `r${fromRevision} → r${toRevision}`).open();
 		}).catch((error: any) => {
-			logError('Error getting diff:', error);
+			svnError(error);
 			// Could show a notice here
 		});
 	}
@@ -62,7 +62,7 @@ export class SVNHistoryRenderer {
 				
 			} catch (statusError) {
 				// Continue with checkout even if status check fails
-				logWarn('SVNHistoryRenderer', 'Could not check file status before checkout:', statusError);
+				svnError('Could not check file status before checkout:', statusError);
 			}
 			
 			// Perform the checkout
@@ -72,10 +72,10 @@ export class SVNHistoryRenderer {
 			try {
 				const info = await this.svnClient.getInfo(filePath);
 				if (info && info.revision !== revision) {
-					logWarn('SVNHistoryRenderer', `Checkout may have failed: expected r${revision}, got r${info.revision}`);
+					svnError(`Checkout may have failed: expected r${revision}, got r${info.revision}`);
 				}
 			} catch (verifyError) {
-				logWarn('SVNHistoryRenderer', 'Could not verify checkout success:', verifyError);
+				svnError('Could not verify checkout success:', verifyError);
 			}
 			  // Force Obsidian to reload the file from disk
 			await this.forceFileReload(filePath);
@@ -91,18 +91,18 @@ export class SVNHistoryRenderer {
 				new Notice(`Checked out revision ${revision}.`);
 			}
 			
-			logInfo('SVNHistoryRenderer', `Checked out revision ${revision} for ${filePath}`);
+			svnInfo(`Checked out revision ${revision} for ${filePath}`);
 			
 			// Force file reload first to ensure Obsidian sees the changes
 			await this.forceFileReload(filePath);
 			
 			// Give a small delay for file system events to propagate, then refresh data
 			setTimeout(() => {
-				logInfo('SVNHistoryRenderer', '[SVN HistoryRenderer] Triggering refresh after checkout');
+				svnInfo('[SVN HistoryRenderer] Triggering refresh after checkout');
 				this.refreshCallback();
 			}, 100);
 		} catch (error: any) {
-			logError('SVNHistoryRenderer', 'Error checking out revision:', error);
+			svnError('Error checking out revision:', error);
 			new Notice(`Failed to checkout revision ${revision}: ${error.message}`, 5000);
 		}
 	}
@@ -138,8 +138,13 @@ export class SVNHistoryRenderer {
 				});
 			}
 		} catch (error) {
-			logWarn('SVNHistoryRenderer', 'Could not force file reload:', error);
+			svnError('Could not force file reload:', error);
 			// Continue anyway - the SVN view will still be updated
 		}
 	}
 }
+
+
+
+
+

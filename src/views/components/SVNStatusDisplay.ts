@@ -2,7 +2,7 @@ import { TFile } from 'obsidian';
 import { SVNClient } from '../../services/SVNClient';
 import { SVNStatusUtils } from '../../utils/SVNStatusUtils';
 import { SVNConstants } from '../../utils/SVNConstants';
-import { logger, logDebug, logInfo, logWarn, logError } from '../../utils/logger';
+import { svnDebug, svnInfo, svnError } from '../../debug';
 
 export class SVNStatusDisplay {
 	private svnClient: SVNClient;
@@ -15,7 +15,7 @@ export class SVNStatusDisplay {
 	async render(container: HTMLElement, currentFile: TFile | null): Promise<void> {
 		// Prevent multiple simultaneous renders for the same container
 		if (this.isRendering) {
-			logDebug('SVNStatusDisplay', 'Already rendering, reusing existing promise');
+			svnDebug('Already rendering, reusing existing promise');
 			if (this.lastRenderPromise) {
 				return this.lastRenderPromise;
 			}
@@ -54,12 +54,12 @@ export class SVNStatusDisplay {
 		try {
 			// Check if file is in working copy
 			const isWorkingCopy = await this.svnClient.isWorkingCopy(currentFile.path);
-			logDebug('SVNStatusDisplay', 'isWorkingCopy check:', {
+			svnDebug('isWorkingCopy check:', {
 				filePath: currentFile.path,
 				isWorkingCopy: isWorkingCopy
 			});
 			if (!isWorkingCopy) {
-				logInfo('SVNStatusDisplay', 'File not in working copy, showing icon message');
+				svnDebug("File not in working copy, showing icon message");
 				const notInWcEl = statusEl.createEl('span', { cls: 'svn-status-text' });
 				this.createStatusWithIcon(notInWcEl, SVNConstants.ICONS.NOT_IN_WORKING_COPY, SVNConstants.MESSAGES.NOT_IN_WORKING_COPY, SVNConstants.CSS_CLASSES.WARNING);
 				return;
@@ -87,7 +87,6 @@ export class SVNStatusDisplay {
 						cls: 'svn-revision-author'
 					});
 				}
-				
 				if (svnInfo.lastChangedDate) {
 					const date = new Date(svnInfo.lastChangedDate).toLocaleDateString();
 					revisionEl.createEl('span', {
@@ -96,10 +95,10 @@ export class SVNStatusDisplay {
 					});
 				}
 			} else {
-				logInfo('SVNStatusDisplay', 'No revision info available. svnInfo:', svnInfo);
-				logInfo('SVNStatusDisplay', 'svnInfo type:', typeof svnInfo);
-				logInfo('SVNStatusDisplay', 'lastChangedRev:', svnInfo?.lastChangedRev);
-			}			
+				svnDebug("No revision info available. svnInfo:", svnInfo);
+				svnDebug("svnInfo type:", typeof svnInfo);
+				svnDebug("lastChangedRev:", svnInfo?.lastChangedRev);
+			}
 			
 			// Get file status
 			const statusArray = await this.svnClient.getStatus(currentFile.path);
@@ -111,7 +110,8 @@ export class SVNStatusDisplay {
 				// If file is unversioned, do not show generic status (let file state renderer handle it)
 				return;
 			}
-			const statusTextEl = statusContainer.createEl('span', { cls: 'svn-status-text' });			
+			
+			const statusTextEl = statusContainer.createEl('span', { cls: 'svn-status-text' });
 			if (!statusArray || statusArray.length === 0) {
 				this.createStatusWithIcon(statusTextEl, SVNConstants.ICONS.UP_TO_DATE, SVNConstants.MESSAGES.UP_TO_DATE, SVNConstants.CSS_CLASSES.UP_TO_DATE);
 			} else {
@@ -123,27 +123,27 @@ export class SVNStatusDisplay {
 					
 					// Special handling for 'M' status - check if there are actual content differences
 					if (statusCode === 'M') {
-						const hasActualChanges = await this.hasActualContentChanges(currentFile.path);
-						if (hasActualChanges) {
+						const hasActualChanges = await this.hasActualContentChanges(currentFile.path);						if (hasActualChanges) {
 							this.createStatusWithIcon(statusTextEl, SVNConstants.ICONS.MODIFIED, SVNConstants.MESSAGES.MODIFIED, SVNConstants.CSS_CLASSES.MODIFIED);
 						} else {
 							this.createStatusWithIcon(statusTextEl, SVNConstants.ICONS.UP_TO_DATE, SVNConstants.MESSAGES.UP_TO_DATE, SVNConstants.CSS_CLASSES.UP_TO_DATE);
-						}} else {
+						}
+					} else {
 						const statusText = SVNStatusUtils.getStatusText(statusCode);
 						const icon = SVNStatusUtils.getStatusIcon(statusCode);
 						const cssClass = SVNStatusUtils.getStatusClass(statusCode);
 						this.createStatusWithIcon(statusTextEl, icon, statusText, cssClass);
-					}
-				}
-			}		} catch (error) {
-			logError('SVNStatusDisplay', 'Error in renderStatusContent:', error);
+					}				}
+			}
+		} catch (error) {
+			svnError('Error in renderStatusContent:', error);
 			const errorEl = statusEl.createEl('span', { cls: 'svn-status-text' });
 			this.createStatusWithIcon(errorEl, SVNConstants.ICONS.ERROR, SVNConstants.MESSAGES.ERROR_GETTING_STATUS, SVNConstants.CSS_CLASSES.ERROR);
 		}
-	}
-	/**
+	}	/**
 	 * Create a status element with an icon and text
-	 */	createStatusWithIcon(container: HTMLElement, icon: string, text: string, cssClass: string): void {
+	 */
+	createStatusWithIcon(container: HTMLElement, icon: string, text: string, cssClass: string): void {
 		// Create icon element with fixed width
 		const iconEl = container.createEl('span', { 
 			text: icon,
@@ -170,11 +170,11 @@ export class SVNStatusDisplay {
 			const hasChanges = diff.trim().length > 0;
 			// Only log if there's a discrepancy (status shows modified but no diff)
 			if (!hasChanges) {
-				logDebug('SVNStatusDisplay', `File ${filePath} shows as modified but has no diff content - likely reverted`);
+				svnDebug(`File ${filePath} shows as modified but has no diff content - likely reverted`);
 			}
 			return hasChanges;
 		} catch (error) {
-			logError('SVNStatusDisplay', 'Error checking for actual changes:', error);
+			svnError('Error checking for actual changes:', error);
 			// If we can't get diff, assume there are changes to be safe
 			return true;
 		}
@@ -185,3 +185,12 @@ export class SVNStatusDisplay {
 			   typeof this.svnClient.setVaultPath === 'function';
 	}
 }
+
+
+
+
+
+
+
+
+

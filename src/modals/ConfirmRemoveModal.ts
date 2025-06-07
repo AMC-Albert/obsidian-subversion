@@ -36,3 +36,7 @@ export class ConfirmRemoveModal extends Modal {
 			.onClick(() => this.close());
 	}
 }
+
+
+
+

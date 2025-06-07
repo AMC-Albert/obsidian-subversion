@@ -3,7 +3,7 @@ import { SVNClient } from '../../services/SVNClient';
 import type ObsidianSvnPlugin from '../../main';
 import { CheckoutModal } from '../../modals/CheckoutModal';
 import { join } from 'path';
-import { logError } from 'src/utils/logger';
+import { svnDebug, svnInfo, svnError } from '../../debug';
 
 export class SVNRepositoryHandler {
     private plugin: ObsidianSvnPlugin;
@@ -19,8 +19,8 @@ export class SVNRepositoryHandler {
     }    async validateRepository(): Promise<{ isValid: boolean; repoPath?: string; error?: string }> {
         try {
             const settings = this.plugin.settings;
-            //logger.debug('RepositoryHandler', validateRepository - full settings:', settings);
-            //logger.debug('RepositoryHandler', validateRepository - repositoryName:', settings.repositoryName);
+            //svnDebug(validateRepository - full settings:', settings);
+            //svnDebug(validateRepository - repositoryName:', settings.repositoryName);
 
             if (!settings.repositoryName) {
                 return { 
@@ -40,8 +40,8 @@ export class SVNRepositoryHandler {
             const hiddenRepoName = `.${settings.repositoryName}`;
             const repoPath = join(vaultPath, hiddenRepoName);
 
-            //logger.debug('RepositoryHandler', validateRepository - hiddenRepoName:', hiddenRepoName);
-            //logger.debug('RepositoryHandler', validateRepository - repoPath:', repoPath);
+            //svnDebug(validateRepository - hiddenRepoName:', hiddenRepoName);
+            //svnDebug(validateRepository - repoPath:', repoPath);
 
             // Check if repository exists
             const fs = require('fs');
@@ -110,7 +110,7 @@ export class SVNRepositoryHandler {
                         (this.plugin.app as any).setting.open();
                         (this.plugin.app as any).setting.openTabById(this.plugin.manifest.id);
                     } catch (error) {
-                        logError('SVNRepositoryHandler', 'Failed to open settings:', error);
+                        svnError('Failed to open settings:', error);
                     }
                 });
         } else {
@@ -201,7 +201,7 @@ export class SVNRepositoryHandler {
             
             await this.initWorkingCopy(repoPath, currentFile);
         } catch (error) {
-            logError('SVNRepositoryHandler', 'Failed to create repository:', error);
+            svnError('Failed to create repository:', error);
             new Notice(`Failed to create repository: ${error.message}`);
         }
     }
@@ -220,7 +220,7 @@ export class SVNRepositoryHandler {
             new Notice('Repository checked out successfully');
             this.onRefresh();
         } catch (error) {
-            logError('SVNRepositoryHandler', 'Failed to checkout repository:', error);
+            svnError('Failed to checkout repository:', error);
             new Notice(`Failed to checkout repository: ${error.message}`);
         }
     }    private async initWorkingCopy(repoPath: string, currentFile: TFile | null): Promise<void> {
@@ -238,7 +238,7 @@ export class SVNRepositoryHandler {
             new Notice('Working copy initialized successfully');
             this.onRefresh();
         } catch (error) {
-            logError('SVNRepositoryHandler', 'Failed to initialize working copy:', error);
+            svnError('Failed to initialize working copy:', error);
             new Notice(`Failed to initialize working copy: ${error.message}`);
         }
     }    private async showCheckoutModal(currentFile: TFile | null): Promise<void> {
@@ -281,11 +281,16 @@ export class SVNRepositoryHandler {
             new Notice('External repository checked out successfully');
             this.onRefresh();
         } catch (error) {
-            logError('SVNRepositoryHandler', 'Failed to checkout external repository:', error);
+            svnError('Failed to checkout external repository:', error);
             new Notice(`Failed to checkout repository: ${error.message}`);
         }
     }
 }
+
+
+
+
+
 
 
 

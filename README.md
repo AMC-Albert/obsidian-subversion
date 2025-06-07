@@ -9,6 +9,16 @@ This plugin integrates Subversion (SVN) version control into Obsidian, allowing 
 - Easy configuration of SVN binary path.
 - User-friendly interface for selecting revisions.
 
+## Debug
+
+To enable debug output for this plugin:
+
+1. Open the developer console (`Ctrl+Shift+I` / `Cmd+Option+I`)
+2. Run: `window.DEBUG.enable('subversion')`
+3. Test debug output: `window.testSubversionDebug()`
+
+To disable debug output: `window.DEBUG.disable('subversion')`
+
 ## Installation
 
 1. Clone the repository:

@@ -95,3 +95,8 @@ export class SVNViewLayoutManager {
 		this.contentArea = null;
 	}
 }
+
+
+
+
+

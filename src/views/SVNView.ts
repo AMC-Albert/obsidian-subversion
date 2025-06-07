@@ -13,7 +13,7 @@ import {
 	SVNRepositoryHandler 
 } from './components';
 import { SVNUIController, UIState } from './SVNUIController';
-import { logger, logInfo, logDebug } from '../utils/logger';
+import { svnDebug, svnInfo, svnError } from '../debug';
 
 export const FILE_HISTORY_VIEW_TYPE = PLUGIN_CONSTANTS.VIEW_TYPE;
 
@@ -151,7 +151,7 @@ export class SVNView extends ItemView {
 	 * Handle UI state changes - delegate to main renderer
 	 */
 	private async handleUIStateChange(state: UIState): Promise<void> {
-		logInfo('SVN SVNView', 'handleUIStateChange called:', {
+		svnInfo('handleUIStateChange called:', {
 			showLoading: state.showLoading,
 			hasData: !!state.data,
 			error: state.error,
@@ -161,7 +161,7 @@ export class SVNView extends ItemView {
 		
 		// Prevent overlapping state change handlers
 		if (!this.isInitialized) {
-			logger.info('SVN SVNView', 'View not initialized, skipping state change');
+			svnInfo('View not initialized, skipping state change');
 			return;
 		}
 		
@@ -169,7 +169,7 @@ export class SVNView extends ItemView {
 		await this.viewRenderer.handleUIStateChange(state, this.currentFile);
 				// Check if we're showing repository setup after rendering
 		const isShowingSetup = this.isShowingRepositorySetup();
-		logger.info('SVN SVNView', 'Setup mode detected:', isShowingSetup);
+		svnInfo('Setup mode detected:', isShowingSetup);
 		
 		// Update toolbar button states based on current state
 		if (isShowingSetup) {
@@ -201,7 +201,7 @@ export class SVNView extends ItemView {
 	 * Show repository setup and update toolbar state
 	 */
 	showRepositorySetup(): void {
-		logger.info('SVN SVNView', 'Showing repository setup');
+		svnInfo('Showing repository setup');
 		this.markUserInteraction();
 		
 		// Hide the info panel if it's currently visible
@@ -236,7 +236,7 @@ export class SVNView extends ItemView {
 	 * Handle settings changes from the main plugin
 	 */
 	onSettingsChanged(): void {
-		logger.info('SVN SVNView', 'Settings changed, refreshing view');
+		svnInfo('Settings changed, refreshing view');
 		// Only refresh if we're showing the repository setup (not if showing normal content)
 		if (!this.currentFile || this.isShowingRepositorySetup()) {
 			this.refreshView();
@@ -259,7 +259,7 @@ export class SVNView extends ItemView {
 			(contentArea.textContent?.includes('Create New Repository') ?? false) ||
 			(contentArea.textContent?.includes('Checkout Existing Repository') ?? false);
 
-		logger.info('SVN SVNView', 'Repository setup check:', {
+		svnInfo('Repository setup check:', {
 			hasSetupContent,
 			contentText: contentArea.textContent?.substring(0, 100)
 		});
@@ -272,7 +272,7 @@ export class SVNView extends ItemView {
 	 * Refresh all data (full refresh)
 	 */
 	async refreshData(): Promise<void> {
-		logger.info('SVN SVNView', 'refreshData called');
+		svnInfo('refreshData called');
 		await this.uiController.refreshCurrentFile();
 	}
 
@@ -287,7 +287,7 @@ export class SVNView extends ItemView {
 	 * Refresh only status data (lightweight refresh)
 	 */
 	async refreshStatus(): Promise<void> {
-		logger.info('SVN SVNView', 'refreshStatus called');
+		svnInfo('refreshStatus called');
 		await this.viewRenderer.refreshStatus(this.currentFile);
 	}
 
@@ -318,7 +318,11 @@ export class SVNView extends ItemView {
 	 * Mark user interaction to prevent DOM rebuilding during button clicks
 	 */
 	private markUserInteraction(): void {
-		logInfo('SVN SVNView', 'markUserInteraction called - activating protection');
+		svnInfo('markUserInteraction called - activating protection');
 		this.viewRenderer.getStateManager().startUserInteraction();
 	}
 }
+
+
+
+
