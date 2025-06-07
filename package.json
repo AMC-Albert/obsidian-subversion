@@ -1,6 +1,6 @@
 {
 	"name": "subversion",
-	"version": "0.2.3",
+	"version": "0.2.4",
 	"description": "Integrates Subversion (SVN) for fine-grain control over file revisions.",
 	"main": "main.js",
 	"scripts": {
