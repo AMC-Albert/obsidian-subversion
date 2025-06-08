@@ -1,7 +1,7 @@
 import { Notice } from 'obsidian';
 import { CreateRepoModal } from '../modals';
 import type ObsidianSvnPlugin from '../main';
-import { svnError } from '../debug';
+import { error, registerLoggerClass } from '@/utils/obsidian-logger';
 
 export function registerCommands(plugin: ObsidianSvnPlugin) {
 	// Use the plugin's SVN client instance instead of creating a new one
@@ -29,7 +29,7 @@ export function registerCommands(plugin: ObsidianSvnPlugin) {
 				// Open the FileHistoryView
 				await plugin.activateView();
 			} catch (error) {
-				svnError('SVN show history error:', error);
+				error(this, 'SVN show history error:', error);
 				new Notice(`Error: ${error.message}`);
 			}
 		}
@@ -57,7 +57,7 @@ export function registerCommands(plugin: ObsidianSvnPlugin) {
 						});
 				}
 			} catch (error) {
-				svnError('SVN revert error:', error);
+				error(this, 'SVN revert error:', error);
 				new Notice(`Error: ${error.message}`);
 			}
 		}
@@ -83,7 +83,7 @@ export function registerCommands(plugin: ObsidianSvnPlugin) {
 					plugin.refreshFileHistoryViews();
 				}, 500);
 			} catch (error) {
-				svnError('SVN commit error:', error);
+				error(this, 'SVN commit error:', error);
 				new Notice(`Error: ${error.message}`);
 			}
 		}
@@ -115,7 +115,7 @@ export function registerCommands(plugin: ObsidianSvnPlugin) {
 					plugin.refreshFileHistoryViews();
 				}, 500);
 			} catch (error) {
-				svnError('SVN commit with message error:', error);
+				error(this, 'SVN commit with message error:', error);
 				new Notice(`Error: ${error.message}`);
 			}
 		}
@@ -140,7 +140,7 @@ export function registerCommands(plugin: ObsidianSvnPlugin) {
 					new Notice(`SVN Status:\n${statusText}`);
 				}
 			} catch (error) {
-				svnError('SVN status error:', error);
+				error(this, 'SVN status error:', error);
 				new Notice(`Error: ${error.message}`);
 			}
 		}
@@ -174,7 +174,7 @@ export function registerCommands(plugin: ObsidianSvnPlugin) {
 				};
 				diffModal.open();
 		} catch (error) {
-				svnError('SVN diff error:', error);
+				error(this, 'SVN diff error:', error);
 				new Notice(`Error: ${error.message}`);
 			}
 		}
@@ -199,7 +199,7 @@ export function registerCommands(plugin: ObsidianSvnPlugin) {
 				await execPromise(`${plugin.settings.svnBinaryPath} add "${filePath}"`);
 				new Notice('File added to SVN');
 			} catch (error) {
-				svnError('SVN add file error:', error);
+				error(this, 'SVN add file error:', error);
 				new Notice(`Error: ${error.message}`);
 			}
 		}
@@ -223,7 +223,7 @@ export function registerCommands(plugin: ObsidianSvnPlugin) {
 							const hiddenRepoName = `.${cleanRepoName}`;
 							new Notice(`SVN repository '${hiddenRepoName}' created successfully!`);
 						} catch (error) {
-							svnError('SVN create repository error:', error);
+							error(this, 'SVN create repository error:', error);
 							new Notice(`Error creating repository: ${error.message}`);
 						}
 					},
@@ -232,7 +232,7 @@ export function registerCommands(plugin: ObsidianSvnPlugin) {
 					}				);
 				modal.open();
 			} catch (error) {
-				svnError('SVN create repository modal error:', error);
+				error(this, 'SVN create repository modal error:', error);
 				new Notice(`Error: ${error.message}`);
 			}
 		}

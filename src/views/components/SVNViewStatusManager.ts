@@ -7,7 +7,7 @@ import { SVNViewStateManager } from './SVNViewStateManager';
 import { SVNStatusUtils } from '../../utils/SVNStatusUtils';
 import { SVNConstants } from '../../utils/SVNConstants';
 import { SVNFileStateRenderer } from './SVNFileStateRenderer';
-import { svnDebug, svnInfo, svnError } from '../../debug';
+import { debug, info, error, registerLoggerClass } from '@/utils/obsidian-logger';
 
 /**
  * Manages status updates and display logic for the FileHistoryView
@@ -40,7 +40,7 @@ export class SVNViewStatusManager {
 		
 		// Prevent duplicate renders - if already rendering, skip
 		if (this.isRendering) {
-			svnDebug('Already rendering, skipping duplicate update');
+			debug(this, 'Already rendering, skipping duplicate update');
 			return;
 		}
 		
@@ -67,7 +67,7 @@ export class SVNViewStatusManager {
 			// Calculate status hash to avoid unnecessary rebuilds
 			const currentStatusHash = this.stateManager.calculateStatusHash(state, currentFile?.path);
 			if (currentStatusHash === this.stateManager.getLastStatusHash()) {
-				svnInfo('Status hash unchanged, skipping render');
+				info(this, 'Status hash unchanged, skipping render');
 				return;
 			}
 			
@@ -85,7 +85,7 @@ export class SVNViewStatusManager {
 			} else if (currentFile && !state.showLoading) {
 				// Only fall back to direct SVNStatusDisplay when we have no state data AND not loading
 				// But never during loading state to prevent infinite loops
-				svnInfo('No state data available, falling back to direct SVNStatusDisplay');
+				info(this, 'No state data available, falling back to direct SVNStatusDisplay');
 				await this.statusDisplay.render(statusContainer, currentFile);
 			}
 			
@@ -110,7 +110,7 @@ export class SVNViewStatusManager {
 			this.statusDisplay.createStatusWithIcon(statusTextEl, SVNConstants.ICONS.NOT_IN_WORKING_COPY, SVNConstants.MESSAGES.NOT_IN_WORKING_COPY, SVNConstants.CSS_CLASSES.WARNING);
 			return;
 		}		if (currentFile) {
-			svnInfo('renderStatusWithData: Looking for file in status data:', {
+			info(this, 'renderStatusWithData: Looking for file in status data:', {
 				currentFilePath: currentFile.path,
 				isFileInSvn: data.isFileInSvn,
 				statusEntries: data.status?.map(item => ({ filePath: item.filePath, status: item.status })) || []
@@ -118,7 +118,7 @@ export class SVNViewStatusManager {
 
 			// PRIORITY CHECK: If file is explicitly marked as not in SVN, show unversioned UI immediately
 			if (data.isFileInSvn === false) {
-				svnInfo('renderStatusWithData: File marked as not in SVN (isFileInSvn=false), showing unversioned status.');
+				info(this, 'renderStatusWithData: File marked as not in SVN (isFileInSvn=false), showing unversioned status.');
 				container.empty();
 				const statusTextEl = container.createEl('span', { cls: 'svn-status-text' });
 				this.statusDisplay.createStatusWithIcon(statusTextEl, SVNConstants.ICONS.UNVERSIONED, 'Unversioned', SVNConstants.CSS_CLASSES.UNVERSIONED);
@@ -127,32 +127,32 @@ export class SVNViewStatusManager {
 
 			const fileStatusEntry = data.status?.find(item => {
 				const match = this.svnClient.comparePaths(item.filePath, currentFile.path);
-				svnInfo('Comparing paths:', {
+				info(this, 'Comparing paths:', {
 					svnPath: item.filePath,
 					currentPath: currentFile.path,
 					match: match
 				});
 				return match;
 			});
-			svnInfo('File status entry found:', fileStatusEntry);
+			info(this, 'File status entry found:', fileStatusEntry);
 
 			if (fileStatusEntry && fileStatusEntry.status === '?') {
 				// Unversioned file: show simple status message
-				svnInfo('renderStatusWithData: Unversioned file status found in data, showing status message.');
+				info(this, 'renderStatusWithData: Unversioned file status found in data, showing status message.');
 				container.empty();
 				const statusTextEl = container.createEl('span', { cls: 'svn-status-text' });
 				this.statusDisplay.createStatusWithIcon(statusTextEl, SVNConstants.ICONS.UNVERSIONED, 'Unversioned', SVNConstants.CSS_CLASSES.UNVERSIONED);
 				return;
 			} else if (fileStatusEntry) {
 				// Versioned file with status (M, A, D, etc.) - delegate to SVNStatusDisplay
-				svnInfo('renderStatusWithData: Versioned file with status, delegating to SVNStatusDisplay.');
+				info(this, 'renderStatusWithData: Versioned file with status, delegating to SVNStatusDisplay.');
 				this.statusDisplay.render(container, currentFile);
 				return;			} else {
 				// File not found in status data - could be clean/unmodified versioned file
 				// Check if the file is actually versioned first
 				if (data.isFileInSvn === true) {
 					// File is versioned but has no status entry - it's clean/committed
-					svnInfo('renderStatusWithData: File is versioned but clean (no status entry), showing up-to-date status.');
+					info(this, 'renderStatusWithData: File is versioned but clean (no status entry), showing up-to-date status.');
 					container.empty();
 					const statusTextEl = container.createEl('span', { cls: 'svn-status-text' });
 					this.statusDisplay.createStatusWithIcon(statusTextEl, SVNConstants.ICONS.UP_TO_DATE, SVNConstants.MESSAGES.UP_TO_DATE, SVNConstants.CSS_CLASSES.UP_TO_DATE);
@@ -162,12 +162,12 @@ export class SVNViewStatusManager {
 				// Check if there are any status entries at all to determine if we're in a working copy with data
 				if (data.status && data.status.length > 0) {
 					// We have status data but this file isn't in it - likely a clean versioned file
-					svnInfo('renderStatusWithData: Clean versioned file (not in status list), delegating to SVNStatusDisplay.');
+					info(this, 'renderStatusWithData: Clean versioned file (not in status list), delegating to SVNStatusDisplay.');
 					this.statusDisplay.render(container, currentFile);
 					return;
 				} else {
 					// No status data at all - might be unversioned or error state
-					svnInfo('renderStatusWithData: No status data available, checking if file is versioned.');
+					info(this, 'renderStatusWithData: No status data available, checking if file is versioned.');
 					this.statusDisplay.render(container, currentFile);
 					return;
 				}
@@ -193,7 +193,7 @@ export class SVNViewStatusManager {
 	async updateFileStatusDirect(currentFile: TFile | null, statusContainer: HTMLElement | null): Promise<void> {
 		if (!currentFile || !statusContainer) return;
 		
-		svnInfo('Performing direct status update for:', currentFile.path);
+		info(this, 'Performing direct status update for:', currentFile.path);
 		
 		try {
 			// Get fresh status data directly without retry logic
@@ -221,10 +221,10 @@ export class SVNViewStatusManager {
 			statusContainer.empty();
 			this.renderStatusWithData(statusContainer, statusData as any, currentFile);
 			
-			svnInfo('Direct status update completed successfully');
+			info(this, 'Direct status update completed successfully');
 			
 		} catch (error) {
-			svnInfo('Error in direct status update:', error);
+			info(this, 'Error in direct status update:', error);
 		}
 	}
 
@@ -232,7 +232,7 @@ export class SVNViewStatusManager {
 	 * Analyze the type of changes in a diff to determine if they're substantial or just whitespace
 	 */
 	analyzeDiffChanges(diff: string): { type: string, isWhitespaceOnly: boolean, description: string } {
-		svnInfo('Analyzing diff changes, input length:', diff.length);
+		info(this, 'Analyzing diff changes, input length:', diff.length);
 		
 		if (!diff || diff.trim().length === 0) {
 			return { type: 'no-changes', isWhitespaceOnly: true, description: 'No changes detected' };
@@ -242,7 +242,7 @@ export class SVNViewStatusManager {
 		const lines = diff.split('\n');
 		const changeLines = lines.filter(line => line.startsWith('+') || line.startsWith('-'));
 		
-		svnInfo('Diff analysis:', {
+		info(this, 'Diff analysis:', {
 			totalLines: lines.length,
 			changeLines: changeLines.length,
 			sampleChangeLines: changeLines.slice(0, 5)
@@ -314,7 +314,7 @@ export class SVNViewStatusManager {
 			}
 		})();
 		
-		svnInfo('Diff analysis result:', {
+		info(this, 'Diff analysis result:', {
 			hasContentChanges,
 			hasWhitespaceChanges,
 			hasLineEndingChanges,

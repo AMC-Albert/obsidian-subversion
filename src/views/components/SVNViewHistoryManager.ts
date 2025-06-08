@@ -4,7 +4,7 @@ import { SVNFileData } from '../../services/SVNDataStore';
 import { UIState } from '../SVNUIController';
 import { SVNHistoryRenderer, SVNFileStateRenderer, SVNRepositoryHandler } from '.';
 import type ObsidianSvnPlugin from '../../main';
-import { svnDebug, svnInfo, svnError } from '../../debug';
+import { debug, info, error, registerLoggerClass } from '@/utils/obsidian-logger';
 
 /**
  * Manages history rendering and content display for the FileHistoryView
@@ -92,7 +92,7 @@ export class SVNViewHistoryManager {
 	 * Render history data efficiently
 	 */
 	renderHistoryWithData(container: HTMLElement, data: SVNFileData, currentFile: TFile | null): void {
-		svnInfo('renderHistoryWithData called:', {
+		info(this, 'renderHistoryWithData called:', {
 			filePath: currentFile?.path,
 			historyCount: data.history?.length || 0,
 			historyRevisions: data.history?.map(h => ({ revision: h.revision, message: h.message?.substring(0, 30) })) || [],

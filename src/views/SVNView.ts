@@ -1,7 +1,7 @@
 import { ItemView, WorkspaceLeaf, TFile } from 'obsidian';
-import { SVNClient } from '../services/SVNClient';
+import { SVNClient } from '@/services';
 import type ObsidianSvnPlugin from '../main';
-import { PLUGIN_CONSTANTS } from '../core/constants';
+import { PLUGIN_CONSTANTS } from '@/core';
 import { 
 	SVNViewRenderer,
 	SVNToolbar, 
@@ -13,7 +13,7 @@ import {
 	SVNRepositoryHandler 
 } from './components';
 import { SVNUIController, UIState } from './SVNUIController';
-import { svnDebug, svnInfo, svnError } from '../debug';
+import { debug, info, error, registerLoggerClass } from '@/utils/obsidian-logger';
 
 export const FILE_HISTORY_VIEW_TYPE = PLUGIN_CONSTANTS.VIEW_TYPE;
 
@@ -41,11 +41,11 @@ export class SVNView extends ItemView {
 	
 	// Simple state tracking
 	private isInitialized = false;
-
 	constructor(leaf: WorkspaceLeaf, plugin: ObsidianSvnPlugin) {
 		super(leaf);
 		this.plugin = plugin;
 		this.svnClient = plugin.svnClient;
+		registerLoggerClass(this, 'SVNView');
 		
 		// Initialize UI controller
 		this.uiController = new SVNUIController(plugin, this.svnClient);
@@ -151,7 +151,7 @@ export class SVNView extends ItemView {
 	 * Handle UI state changes - delegate to main renderer
 	 */
 	private async handleUIStateChange(state: UIState): Promise<void> {
-		svnInfo('handleUIStateChange called:', {
+		info(this, 'handleUIStateChange called:', {
 			showLoading: state.showLoading,
 			hasData: !!state.data,
 			error: state.error,
@@ -161,7 +161,7 @@ export class SVNView extends ItemView {
 		
 		// Prevent overlapping state change handlers
 		if (!this.isInitialized) {
-			svnInfo('View not initialized, skipping state change');
+			info(this, 'View not initialized, skipping state change');
 			return;
 		}
 		
@@ -169,7 +169,7 @@ export class SVNView extends ItemView {
 		await this.viewRenderer.handleUIStateChange(state, this.currentFile);
 				// Check if we're showing repository setup after rendering
 		const isShowingSetup = this.isShowingRepositorySetup();
-		svnInfo('Setup mode detected:', isShowingSetup);
+		info(this, 'Setup mode detected:', isShowingSetup);
 		
 		// Update toolbar button states based on current state
 		if (isShowingSetup) {
@@ -201,7 +201,7 @@ export class SVNView extends ItemView {
 	 * Show repository setup and update toolbar state
 	 */
 	showRepositorySetup(): void {
-		svnInfo('Showing repository setup');
+		info(this, 'Showing repository setup');
 		this.markUserInteraction();
 		
 		// Hide the info panel if it's currently visible
@@ -236,7 +236,7 @@ export class SVNView extends ItemView {
 	 * Handle settings changes from the main plugin
 	 */
 	onSettingsChanged(): void {
-		svnInfo('Settings changed, refreshing view');
+		info(this, 'Settings changed, refreshing view');
 		// Only refresh if we're showing the repository setup (not if showing normal content)
 		if (!this.currentFile || this.isShowingRepositorySetup()) {
 			this.refreshView();
@@ -259,7 +259,7 @@ export class SVNView extends ItemView {
 			(contentArea.textContent?.includes('Create New Repository') ?? false) ||
 			(contentArea.textContent?.includes('Checkout Existing Repository') ?? false);
 
-		svnInfo('Repository setup check:', {
+		info(this, 'Repository setup check:', {
 			hasSetupContent,
 			contentText: contentArea.textContent?.substring(0, 100)
 		});
@@ -272,7 +272,7 @@ export class SVNView extends ItemView {
 	 * Refresh all data (full refresh)
 	 */
 	async refreshData(): Promise<void> {
-		svnInfo('refreshData called');
+		info(this, 'refreshData called');
 		await this.uiController.refreshCurrentFile();
 	}
 
@@ -287,7 +287,7 @@ export class SVNView extends ItemView {
 	 * Refresh only status data (lightweight refresh)
 	 */
 	async refreshStatus(): Promise<void> {
-		svnInfo('refreshStatus called');
+		info(this, 'refreshStatus called');
 		await this.viewRenderer.refreshStatus(this.currentFile);
 	}
 
@@ -318,7 +318,7 @@ export class SVNView extends ItemView {
 	 * Mark user interaction to prevent DOM rebuilding during button clicks
 	 */
 	private markUserInteraction(): void {
-		svnInfo('markUserInteraction called - activating protection');
+		info(this, 'markUserInteraction called - activating protection');
 		this.viewRenderer.getStateManager().startUserInteraction();
 	}
 }

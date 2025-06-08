@@ -120,7 +120,7 @@ export class SVNInfoPanel {
 			await this.renderFileInfo(currentFile);
 			
 		} catch (error) {
-			svnError('Error getting SVN info:', error);
+			error(this, 'Error getting SVN info:', error);
 			this.panelElement.createEl('p', { 
 				text: `Error: ${error.message}`,
 				cls: 'svn-info-error'
@@ -191,7 +191,7 @@ export class SVNInfoPanel {
 			}
 		} catch (error) {
 			// If we can't get file stats, just add basic info
-			svnError('Error getting file stats:', error);
+			error(this, 'Error getting file stats:', error);
 		}
 
 		// Vault-specific info

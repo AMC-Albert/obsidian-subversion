@@ -1,6 +1,7 @@
 import { App, PluginSettingTab, Setting } from 'obsidian';
 import type ObsidianSvnPlugin from './main';
-import { SvnPluginSettings } from './types';
+import { SvnPluginSettings } from '@/types';
+import { debug, registerLoggerClass } from '@/utils/obsidian-logger';
 
 export class SvnSettingTab extends PluginSettingTab {
 	plugin: ObsidianSvnPlugin;
@@ -8,6 +9,7 @@ export class SvnSettingTab extends PluginSettingTab {
 	constructor(app: App, plugin: ObsidianSvnPlugin) {
 		super(app, plugin);
 		this.plugin = plugin;
+		registerLoggerClass(this, 'SvnSettingTab');
 	}
 
 	display(): void {

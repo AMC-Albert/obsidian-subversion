@@ -15,7 +15,7 @@ export class SVNStatusDisplay {
 	async render(container: HTMLElement, currentFile: TFile | null): Promise<void> {
 		// Prevent multiple simultaneous renders for the same container
 		if (this.isRendering) {
-			svnDebug('Already rendering, reusing existing promise');
+			debug(this, 'Already rendering, reusing existing promise');
 			if (this.lastRenderPromise) {
 				return this.lastRenderPromise;
 			}
@@ -54,12 +54,12 @@ export class SVNStatusDisplay {
 		try {
 			// Check if file is in working copy
 			const isWorkingCopy = await this.svnClient.isWorkingCopy(currentFile.path);
-			svnDebug('isWorkingCopy check:', {
+			debug(this, 'isWorkingCopy check:', {
 				filePath: currentFile.path,
 				isWorkingCopy: isWorkingCopy
 			});
 			if (!isWorkingCopy) {
-				svnDebug("File not in working copy, showing icon message");
+				debug(this, "File not in working copy, showing icon message");
 				const notInWcEl = statusEl.createEl('span', { cls: 'svn-status-text' });
 				this.createStatusWithIcon(notInWcEl, SVNConstants.ICONS.NOT_IN_WORKING_COPY, SVNConstants.MESSAGES.NOT_IN_WORKING_COPY, SVNConstants.CSS_CLASSES.WARNING);
 				return;
@@ -95,9 +95,9 @@ export class SVNStatusDisplay {
 					});
 				}
 			} else {
-				svnDebug("No revision info available. svnInfo:", svnInfo);
-				svnDebug("svnInfo type:", typeof svnInfo);
-				svnDebug("lastChangedRev:", svnInfo?.lastChangedRev);
+				debug(this, "No revision info available. svnInfo:", svnInfo);
+				debug(this, "svnInfo type:", typeof svnInfo);
+				debug(this, "lastChangedRev:", svnInfo?.lastChangedRev);
 			}
 			
 			// Get file status
@@ -136,7 +136,7 @@ export class SVNStatusDisplay {
 					}				}
 			}
 		} catch (error) {
-			svnError('Error in renderStatusContent:', error);
+			error(this, 'Error in renderStatusContent:', error);
 			const errorEl = statusEl.createEl('span', { cls: 'svn-status-text' });
 			this.createStatusWithIcon(errorEl, SVNConstants.ICONS.ERROR, SVNConstants.MESSAGES.ERROR_GETTING_STATUS, SVNConstants.CSS_CLASSES.ERROR);
 		}
@@ -170,11 +170,11 @@ export class SVNStatusDisplay {
 			const hasChanges = diff.trim().length > 0;
 			// Only log if there's a discrepancy (status shows modified but no diff)
 			if (!hasChanges) {
-				svnDebug(`File ${filePath} shows as modified but has no diff content - likely reverted`);
+				debug(this, `File ${filePath} shows as modified but has no diff content - likely reverted`);
 			}
 			return hasChanges;
 		} catch (error) {
-			svnError('Error checking for actual changes:', error);
+			error(this, 'Error checking for actual changes:', error);
 			// If we can't get diff, assume there are changes to be safe
 			return true;
 		}

@@ -1,5 +1,5 @@
 import { TFile } from 'obsidian';
-import { SVNClient } from '../../services/SVNClient';
+import { SVNClient } from '@/services';
 import { UIState } from '../SVNUIController';
 import { 
 	SVNToolbar, 
@@ -15,7 +15,7 @@ import { SVNViewLayoutManager } from './SVNViewLayoutManager';
 import { SVNViewStatusManager } from './SVNViewStatusManager';
 import { SVNViewHistoryManager } from './SVNViewHistoryManager';
 import type ObsidianSvnPlugin from '../../main';
-import { svnDebug, svnInfo, svnError } from '../../debug';
+import { debug, info, error, registerLoggerClass } from '@/utils/obsidian-logger';
 
 /**
  * Main renderer component that coordinates all rendering logic for the FileHistoryView
@@ -53,10 +53,10 @@ export class SVNViewRenderer {
 		historyRenderer: SVNHistoryRenderer,
 		infoPanel: SVNInfoPanel,
 		fileStateRenderer: SVNFileStateRenderer,
-		repositoryHandler: SVNRepositoryHandler
-	) {
+		repositoryHandler: SVNRepositoryHandler	) {
 		this.plugin = plugin;
 		this.svnClient = svnClient;
+		registerLoggerClass(this, 'SVNViewRenderer');
 		
 		// Initialize managers
 		this.stateManager = new SVNViewStateManager();
@@ -92,7 +92,7 @@ export class SVNViewRenderer {
 	async handleUIStateChange(state: UIState, currentFile: TFile | null): Promise<void> {
 		// Prevent overlapping state change handlers
 		if (this.isHandlingStateChange) {
-			svnDebug('Already handling state change, skipping duplicate');
+			debug(this, 'Already handling state change, skipping duplicate');
 			return;
 		}
 		
@@ -101,13 +101,13 @@ export class SVNViewRenderer {
 		try {
 			// Check if we're in a user interaction protection window
 			if (this.stateManager.isInUserInteractionWindow()) {
-				svnInfo('Skipping UI update - user interaction in progress');
+				info(this, 'Skipping UI update - user interaction in progress');
 				return;
 			}
 
 			// Skip rendering if we're currently showing repository setup
 			if (this.isShowingRepositorySetup()) {
-				svnInfo('Skipping UI update - repository setup is active');
+				info(this, 'Skipping UI update - repository setup is active');
 				return;
 			}
 			  // Override state data status with recent direct status if within protection window
@@ -179,7 +179,7 @@ export class SVNViewRenderer {
 		const contentType = this.stateManager.getContentType(state);
 		const historyChanged = contentType === 'history' && this.stateManager.hasHistoryChanged(state);
 		
-		svnInfo('Content analysis:', {
+		info(this, 'Content analysis:', {
 			contentType,
 			historyChanged,
 			showLoading: state.showLoading,
@@ -213,7 +213,7 @@ export class SVNViewRenderer {
 		
 		// Only rebuild if necessary
 		if (shouldRebuild) {
-			svnInfo('Rebuilding content area:', {
+			info(this, 'Rebuilding content area:', {
 				contentType,
 				lastContentType: this.stateManager.getLastContentType(),
 				showLoading: state.showLoading,
@@ -228,7 +228,7 @@ export class SVNViewRenderer {
 	 * Show repository setup UI
 	 */
 	showRepositorySetup(currentFile: TFile | null): void {
-		svnInfo('Showing repository setup view');
+		info(this, 'Showing repository setup view');
 		// Clear the content area and show repository setup
 		const contentArea = this.layoutManager.getContentArea();
 		if (contentArea) {
@@ -258,7 +258,7 @@ export class SVNViewRenderer {
 	 * Show the normal file view (opposite of repository setup)
 	 */
 	showNormalView(currentFile: TFile | null): void {
-		svnInfo('Showing normal file view');
+		info(this, 'Showing normal file view');
 		// Clear the content area
 		const contentArea = this.layoutManager.getContentArea();
 		if (contentArea) {

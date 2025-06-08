@@ -2,9 +2,9 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import { join, dirname, isAbsolute, relative } from 'path'; // Added relative
 import { existsSync, statSync } from 'fs';
-import { SvnLogEntry, SvnStatus, SvnCommandResult, SvnBlameEntry, SvnInfo } from '../types';
-import { SvnError, SvnNotInstalledError, NotWorkingCopyError, SvnCommandError } from '../utils/errors';
-import { svnDebug, svnInfo, svnError } from '../debug';
+import { SvnLogEntry, SvnStatus, SvnCommandResult, SvnBlameEntry, SvnInfo } from '@/types';
+import { SvnError, SvnNotInstalledError, NotWorkingCopyError, SvnCommandError } from '@/utils/errors';
+import { debug, info as logInfo, warn, error, registerLoggerClass } from '@/utils/obsidian-logger';
 
 const execPromise = promisify(exec);
 
@@ -15,10 +15,10 @@ export class SVNClient {
 	
 	// Callback for notifying when cache should be cleared
 	private cacheInvalidationCallback?: () => void;
-
 	constructor(svnPath: string = 'svn', vaultPath: string = '') {
 		this.svnPath = svnPath;
 		this.vaultPath = vaultPath;
+		registerLoggerClass(this, 'SVNClient');
 	}
 
 	/**
@@ -47,25 +47,24 @@ export class SVNClient {
 	}	private findSvnWorkingCopy(absolutePath: string): string | null {
 		// Start from the path itself, then check parent directories
 		let currentPath = absolutePath;
-		svnDebug(`Looking for SVN working copy starting from: ${currentPath}`);
+		debug(this, 'findWorkingCopyRoot', `Looking for SVN working copy starting from: ${currentPath}`);
 		
 		// If the path is a file, start from its directory
 		if (existsSync(currentPath) && !statSync(currentPath).isDirectory()) {
 			currentPath = dirname(currentPath);
-			svnDebug(`Path is a file, starting from directory: ${currentPath}`);
+			debug(this, `Path is a file, starting from directory: ${currentPath}`);
 		}
 		
 		while (currentPath && currentPath !== dirname(currentPath)) {
-			const svnPath = join(currentPath, '.svn');
-			svnDebug(`Checking for .svn directory at: ${svnPath}`);
+			const svnPath = join(currentPath, '.svn');			debug(this, `Checking for .svn directory at: ${svnPath}`);
 			if (existsSync(svnPath)) {
-				svnInfo(`Found SVN working copy at: ${currentPath}`);
+				logInfo(this, 'findSvnWorkingCopy', `Found SVN working copy at: ${currentPath}`);
 				return currentPath;
 			}
 			currentPath = dirname(currentPath);
 		}
 		
-		svnError(`No SVN working copy found starting from: ${absolutePath}`);
+		error(this, `No SVN working copy found starting from: ${absolutePath}`);
 		return null;
 	}
 
@@ -88,17 +87,17 @@ export class SVNClient {
 				// Calculate relative path from working copy root to file
 				const relativePath = relative(workingCopyRoot, absolutePath).replace(/\\/g, '/');
 				repositoryUrl = `${repositoryRoot}/${relativePath}`;
-				svnInfo(`Constructed repository URL:`, { repositoryRoot, relativePath, repositoryUrl });
+				logInfo(this, 'logInfo', `Constructed repository URL:`, { repositoryRoot, relativePath, repositoryUrl });
 			}
 		} catch (infoError) {
-			svnError(`Failed to get repository URL, using local path:`, infoError.message);
+			error(this, `Failed to get repository URL, using local path:`, infoError.message);
 		}
 		
 		// Get complete history from repository
 		// Use repository URL if available, otherwise fall back to local path
 		const targetPath = repositoryUrl || absolutePath;
 		const command = `${this.svnPath} log --xml --verbose --limit 100 "${targetPath}"`;
-		svnDebug('getFileHistory debug:', {
+		debug(this, 'getFileHistory debug:', {
 			originalFilePath: filePath,
 			absolutePath,
 			workingCopyRoot,
@@ -109,20 +108,20 @@ export class SVNClient {
 			note: 'Using repository URL for direct repository query'
 		});
 
-		svnInfo('Executing getFileHistory command:', command);
-		svnInfo('Working directory:', workingCopyRoot);
+		logInfo(this, 'Executing getFileHistory command:', command);
+		logInfo(this, 'Working directory:', workingCopyRoot);
 		const { stdout } = await execPromise(command, { cwd: workingCopyRoot });
-		svnDebug('getFileHistory raw XML output:', stdout);
+		debug(this, 'getFileHistory raw XML output:', stdout);
 
 		const entries = this.parseXmlLog(stdout);
-		svnDebug('getFileHistory parsed entries:', entries);
+		debug(this, 'getFileHistory parsed entries:', entries);
 
 		// Enrich entries with size information
 		const entriesWithSize = await this.enrichHistoryWithSizes(filePath, entries);
 
 		return entriesWithSize;
 		} catch (error) {
-			svnError('getFileHistory error:', { filePath, error: error.message });
+			error(this, 'getFileHistory error:', { filePath, error: error.message });
 			// Check if this is a "file not in SVN" error and preserve the original message
 			const errorMessage = error.message.toLowerCase();
 			if (errorMessage.includes('node was not found') || 
@@ -155,7 +154,7 @@ export class SVNClient {
 					repoSize: repoSize !== null ? repoSize : undefined
 				});
 			} catch (error) {
-				svnError(`Failed to get size info for revision ${entry.revision}:`, error.message);
+				error(this, `Failed to get size info for revision ${entry.revision}:`, error.message);
 				// Add entry without size information
 				enrichedEntries.push(entry);
 			}
@@ -209,7 +208,7 @@ export class SVNClient {
 			
 			return null;
 		} catch (error: any) {
-			svnError(`Failed to get file size for revision ${revision}:`, error.message);
+			error(this, `Failed to get file size for revision ${revision}:`, error.message);
 			return null;
 		}
 	}	/**
@@ -223,35 +222,35 @@ export class SVNClient {
 			// Strategy 1: Try vault path
 			if (this.vaultPath) {
 				workingCopyRoot = this.findSvnWorkingCopy(this.vaultPath);
-				svnDebug(`Strategy 1 - Vault path ${this.vaultPath}, found working copy:`, workingCopyRoot);
+				debug(this, `Strategy 1 - Vault path ${this.vaultPath}, found working copy:`, workingCopyRoot);
 			}
 			
 			// Strategy 2: Try parent of vault path
 			if (!workingCopyRoot && this.vaultPath) {
 				const parentPath = dirname(this.vaultPath);
 				workingCopyRoot = this.findSvnWorkingCopy(parentPath);
-				svnDebug(`Strategy 2 - Parent of vault path ${parentPath}, found working copy:`, workingCopyRoot);
+				debug(this, `Strategy 2 - Parent of vault path ${parentPath}, found working copy:`, workingCopyRoot);
 			}
 			
 			// Strategy 3: Try current working directory
 			if (!workingCopyRoot) {
 				workingCopyRoot = this.findSvnWorkingCopy(process.cwd());
-				svnDebug(`Strategy 3 - CWD ${process.cwd()}, found working copy:`, workingCopyRoot);
+				debug(this, `Strategy 3 - CWD ${process.cwd()}, found working copy:`, workingCopyRoot);
 			}
 			
 			// Strategy 4: Try parent of current working directory
 			if (!workingCopyRoot) {
 				const parentCwd = dirname(process.cwd());
 				workingCopyRoot = this.findSvnWorkingCopy(parentCwd);
-				svnDebug(`Strategy 4 - Parent of CWD ${parentCwd}, found working copy:`, workingCopyRoot);
+				debug(this, `Strategy 4 - Parent of CWD ${parentCwd}, found working copy:`, workingCopyRoot);
 			}
 			
 			if (!workingCopyRoot) {
-				svnError(`Could not find SVN working copy. Vault path: ${this.vaultPath}, CWD: ${process.cwd()}`);
+				error(this, `Could not find SVN working copy. Vault path: ${this.vaultPath}, CWD: ${process.cwd()}`);
 				return null;
 			}
 
-			svnInfo(`Getting repository size for revision ${revision}, working copy: ${workingCopyRoot}`);
+			logInfo(this, 'logInfo', `Getting repository size for revision ${revision}, working copy: ${workingCopyRoot}`);
 
 			// Get repository root path from svn info
 			const infoCommand = `${this.svnPath} info --xml "${workingCopyRoot}"`;
@@ -259,35 +258,35 @@ export class SVNClient {
 			
 			const rootMatch = infoResult.stdout.match(/<root>(.*?)<\/root>/);
 			if (!rootMatch) {
-				svnError('Could not determine repository path from svn info');
+				error(this, 'Could not determine repository path from svn info');
 				return null;
 			}
 			
 			const repositoryUrl = rootMatch[1];
-			svnDebug('Repository URL found:', repositoryUrl);
+			debug(this, 'Repository URL found:', repositoryUrl);
 			
 			// Convert file:// URL to local path for svnadmin
 			let repositoryPath = repositoryUrl.replace(/^file:\/\/\//, '').replace(/^file:\/\//, '');
 			// Convert forward slashes to backslashes on Windows
 			repositoryPath = repositoryPath.replace(/\//g, '\\');
 			
-			svnDebug('Repository path converted:', repositoryPath);
+			debug(this, 'Repository path converted:', repositoryPath);
 			
 			// Use svnadmin rev-size to get the actual repository storage size
 			const command = `svnadmin rev-size "${repositoryPath}" -r ${revision} -q`;
-			svnDebug('Executing command:', command);
+			debug(this, 'Executing command:', command);
 			
 			const result = await execPromise(command);
 			
 			const size = parseInt(result.stdout.trim(), 10);
 			if (!isNaN(size)) {
-				svnInfo(`Repository size for revision ${revision}: ${size} bytes`);
+				logInfo(this, 'logInfo', `Repository size for revision ${revision}: ${size} bytes`);
 				return size;
 			}
 			
-			svnError(`Could not parse repository size from output: ${result.stdout}`);
+			error(this, `Could not parse repository size from output: ${result.stdout}`);
 			return null;		} catch (error: any) {
-			svnError(`Failed to get repository size for revision ${revision}:`, error.message);
+			error(this, `Failed to get repository size for revision ${revision}:`, error.message);
 			return null;
 		}
 	}
@@ -304,19 +303,19 @@ export class SVNClient {
 			try {
 				const revertCommand = `${this.svnPath} revert "${absolutePath}"`;
 				await execPromise(revertCommand, { cwd: workingCopyRoot });
-				svnInfo('Reverted local changes before checkout');
+				logInfo(this, 'logInfo', 'Reverted local changes before checkout');
 			} catch (revertError) {
 				// Ignore revert errors if file has no local changes
-				svnError('No local changes to revert:', revertError.message);
+				error(this, 'No local changes to revert:', revertError.message);
 			}
 			
 			// Use svn update with specific revision for the single file
 			// This properly updates the working copy metadata while changing just this file
 			const updateCommand = `${this.svnPath} update -r ${revision} "${absolutePath}"`;
 			const result = await execPromise(updateCommand, { cwd: workingCopyRoot });
-			svnInfo('SVN update result:', result.stdout);
+			logInfo(this, 'SVN update result:', result.stdout);
 			
-			svnInfo(`Checked out revision ${revision} for file ${filePath}`);
+			logInfo(this, 'logInfo', `Checked out revision ${revision} for file ${filePath}`);
 		} catch (error) {
 			throw new Error(`Failed to checkout revision ${revision}: ${error.message}`);
 		}
@@ -324,7 +323,7 @@ export class SVNClient {
 	
 	async commitFile(filePath: string, message: string): Promise<void> {
 		const fullPath = this.resolveAbsolutePath(filePath);
-		svnInfo('commitFile called with:', { fullPath, message });
+		logInfo(this, 'commitFile called with:', { fullPath, message });
 
 		try {
 			// Ensure parent directories are versioned before committing
@@ -334,11 +333,11 @@ export class SVNClient {
 			await this.ensureFileIsAdded(fullPath);
 
 			const command = `svn commit -m "${message}" "${fullPath}"`;
-			svnInfo('Executing command:', { command });
+			logInfo(this, 'Executing command:', { command });
 			const { stdout, stderr } = await execPromise(command);
 
 			if (stderr) {
-				svnError(`Error committing file ${fullPath}: ${stderr}`);
+				error(this, `Error committing file ${fullPath}: ${stderr}`);
 
 				// Check for the specific error about parent directory not being versioned
 				if (stderr.includes('is not known to exist in the repository')) {
@@ -347,9 +346,9 @@ export class SVNClient {
 				
 				throw new Error(`Failed to commit file: ${stderr}`);
 			}
-			svnInfo(`File ${fullPath} committed successfully: ${stdout}`);
+			logInfo(this, 'logInfo', `File ${fullPath} committed successfully: ${stdout}`);
 		} catch (error) {
-			svnError(`Exception in commitFile for ${fullPath}: ${error}`);
+			error(this, `Exception in commitFile for ${fullPath}: ${error}`);
 			throw error; // Re-throw the original error for higher-level handling
 		}
 		
@@ -362,7 +361,7 @@ export class SVNClient {
 		const repoRoot = this.findSvnWorkingCopy(filePath);
 
 		if (!repoRoot) {
-			svnError(`Could not determine repository root for ${filePath}. Skipping parent directory check.`);
+			error(this, `Could not determine repository root for ${filePath}. Skipping parent directory check.`);
 			return;
 		}
 
@@ -381,11 +380,11 @@ export class SVNClient {
 				if (dirStatus && dirStatus.status === 'A') {
 					// Directory is added but not committed
 					dirsToCommit.unshift(parentDir);
-					svnInfo(`Directory ${parentDir} is added but needs to be committed`);
+					logInfo(this, 'logInfo', `Directory ${parentDir} is added but needs to be committed`);
 				} else {
 					// Directory is not versioned at all
 					dirsToAdd.unshift(parentDir);
-					svnInfo(`Directory ${parentDir} needs to be added`);
+					logInfo(this, 'logInfo', `Directory ${parentDir} needs to be added`);
 				}
 			}
 			
@@ -398,24 +397,24 @@ export class SVNClient {
 
 		// First, add directories that aren't versioned yet
 		for (const dirToAdd of dirsToAdd) {
-			svnInfo(`Adding directory ${dirToAdd} with --depth empty`);
+			logInfo(this, 'logInfo', `Adding directory ${dirToAdd} with --depth empty`);
 			try {
 				await this.add(dirToAdd, true); // true for --depth empty
 			} catch (addError) {
-				svnError(`Failed to add directory ${dirToAdd}: ${addError}`);
+				error(this, `Failed to add directory ${dirToAdd}: ${addError}`);
 				throw new Error(`Failed to add directory ${dirToAdd} during pre-commit check: ${addError}`);
 			}
 		}
 
 		// Then, commit directories that are added but not committed
 		for (const dirToCommit of dirsToCommit) {
-			svnInfo(`Committing directory ${dirToCommit}`);
+			logInfo(this, 'logInfo', `Committing directory ${dirToCommit}`);
 			try {
 				const command = `svn commit -m "Add directory" "${dirToCommit}"`;
 				await execPromise(command);
-				svnInfo(`Successfully committed directory ${dirToCommit}`);
+				logInfo(this, 'logInfo', `Successfully committed directory ${dirToCommit}`);
 			} catch (commitError) {
-				svnError(`Failed to commit directory ${dirToCommit}: ${commitError}`);
+				error(this, `Failed to commit directory ${dirToCommit}: ${commitError}`);
 				throw new Error(`Failed to commit directory ${dirToCommit} during pre-commit check: ${commitError}`);
 			}
 		}
@@ -423,29 +422,29 @@ export class SVNClient {
 
 	async add(filePath: string, depthEmpty: boolean = false): Promise<void> {
 		const fullPath = this.resolveAbsolutePath(filePath);
-		svnInfo('add called with:', { fullPath, depthEmpty });
+		logInfo(this, 'add called with:', { fullPath, depthEmpty });
 		const depthOption = depthEmpty ? '--depth empty ' : '';
 		const command = `svn add ${depthOption}"${fullPath}"`;
-		svnInfo('Executing command:', { command });
+		logInfo(this, 'Executing command:', { command });
 		try {
 			const { stdout, stderr } = await execPromise(command);
 			if (stderr) {
 				// Ignore "already under version control" error for adds
 				if (!stderr.includes("is already under version control")) {
-					svnError(`Error adding file/directory ${fullPath}: ${stderr}`);
+					error(this, `Error adding file/directory ${fullPath}: ${stderr}`);
 					throw new Error(`Failed to add file/directory: ${stderr}`);
 				} else {
-					svnInfo(`${fullPath} is already under version control. No action needed.`);
+					logInfo(this, 'logInfo', `${fullPath} is already under version control. No action needed.`);
 				}
 			}
 			if (stdout) {
-				svnInfo(`${fullPath} added successfully: ${stdout}`);
+				logInfo(this, 'logInfo', `${fullPath} added successfully: ${stdout}`);
 			}
 		} catch (error) {
-			svnError(`Exception in add for ${fullPath}: ${error}`);
+			error(this, `Exception in add for ${fullPath}: ${error}`);
 			// Check if the error is because the file is already versioned
 			if (error.message && error.message.includes("is already under version control")) {
-				svnInfo(`${fullPath} is already under version control. No action needed.`);
+				logInfo(this, 'logInfo', `${fullPath} is already under version control. No action needed.`);
 			} else {
 				throw error; // Re-throw other errors
 			}
@@ -479,7 +478,7 @@ export class SVNClient {
 		
 		// If we already have a pending request for this path, return the existing promise
 		if (this.statusRequestCache.has(cacheKey)) {
-			svnInfo(cacheKey);
+			logInfo(this, 'logInfo', cacheKey);
 			return this.statusRequestCache.get(cacheKey)!;
 		}
 		
@@ -502,13 +501,13 @@ export class SVNClient {
 			let workingCopyRoot: string | null;
 			let targetPath: string;
 
-			svnInfo('getStatus called with path:', path);
+			logInfo(this, 'getStatus called with path:', path);
 
 			if (path) {
 				const absolutePath = this.resolveAbsolutePath(path);
 				workingCopyRoot = this.findSvnWorkingCopy(absolutePath);
 				targetPath = absolutePath;
-				svnInfo('Resolved paths:', {
+				logInfo(this, 'Resolved paths:', {
 					originalPath: path,
 					absolutePath,
 					workingCopyRoot,
@@ -517,7 +516,7 @@ export class SVNClient {
 			} else {
 				workingCopyRoot = this.findSvnWorkingCopy(this.vaultPath);
 				targetPath = '';
-				svnInfo('Using vault path:', {
+				logInfo(this, 'Using vault path:', {
 					vaultPath: this.vaultPath,
 					workingCopyRoot
 				});
@@ -531,27 +530,27 @@ export class SVNClient {
 				`${this.svnPath} status "${targetPath}"` : 
 				`${this.svnPath} status`;
 
-			svnInfo('Executing command:', {
+			logInfo(this, 'Executing command:', {
 				command,
 				cwd: workingCopyRoot
 			});
 			
 			const { stdout } = await execPromise(command, { cwd: workingCopyRoot });
 			
-			svnInfo('Raw status output:', {
+			logInfo(this, 'Raw status output:', {
 				stdout: stdout.substring(0, 200) + (stdout.length > 200 ? '...' : ''),
 				outputLength: stdout.length
 			});
 			
 			const result = this.parseStatus(stdout);
-			svnInfo('Parsed status result:', {
+			logInfo(this, 'Parsed status result:', {
 				resultCount: result.length,
 				results: result
 			});
 			
 			return result;
 		} catch (error) {
-			svnError('getStatus error:', error);
+			error(this, 'getStatus error:', error);
 			throw new Error(`Failed to get SVN status: ${error.message}`);
 		}
 	}
@@ -586,12 +585,12 @@ export class SVNClient {
 	}
 
 	async addFile(filePath: string): Promise<void> {
-		svnInfo('addFile called:', { filePath });
+		logInfo(this, 'addFile called:', { filePath });
 		try {
 			const absolutePath = this.resolveAbsolutePath(filePath);
 			const workingCopyRoot = this.findSvnWorkingCopy(absolutePath);
 
-			svnInfo('addFile paths resolved:', {
+			logInfo(this, 'addFile paths resolved:', {
 				filePath,
 				absolutePath,
 				workingCopyRoot
@@ -606,20 +605,20 @@ export class SVNClient {
 			
 			// Now add the file itself
 			const command = `${this.svnPath} add "${absolutePath}"`;
-			svnInfo('Executing add command:', { command, cwd: workingCopyRoot });
+			logInfo(this, 'Executing add command:', { command, cwd: workingCopyRoot });
 
 			const result = await execPromise(command, { cwd: workingCopyRoot });
-			svnInfo('Add command result:', {
+			logInfo(this, 'Add command result:', {
 				stdout: result.stdout,
 				stderr: result.stderr
 			});
 		} catch (error) {
-			svnError('addFile failed:', error);
+			error(this, 'addFile failed:', error);
 			throw new Error(`Failed to add file to SVN: ${error.message}`);
 		}
 		
 		// Clear cache after addFile operation to ensure fresh status data
-		svnInfo('Clearing status cache after add operation');
+		logInfo(this, 'logInfo', 'Clearing status cache after add operation');
 		this.clearStatusCache();
 	}
 
@@ -684,7 +683,7 @@ export class SVNClient {
 			const workingCopyRoot = this.findSvnWorkingCopy(absolutePath);
 			
 			if (!workingCopyRoot) {
-				svnInfo(filePath);
+				logInfo(this, 'logInfo', filePath);
 				return false;
 			}
 
@@ -694,15 +693,15 @@ export class SVNClient {
 				const infoCommand = `${this.svnPath} info "${absolutePath}"`;
 				await execPromise(infoCommand, { cwd: workingCopyRoot });
 				// If svn info succeeds, file is definitely versioned
-				svnInfo(filePath);
+				logInfo(this, 'logInfo', filePath);
 				return true;
 			} catch (infoError) {
 				// If svn info fails, file is not versioned
-				svnInfo(filePath, infoError.message);
+				logInfo(this, 'logInfo', filePath, infoError.message);
 				return false;
 			}
 		} catch (error) {
-			svnInfo('isFileInSvn: Error occurred:', { filePath, error: error.message });
+			logInfo(this, 'isFileInSvn: Error occurred:', { filePath, error: error.message });
 			return false;
 		}
 	}
@@ -725,7 +724,7 @@ export class SVNClient {
 			return this.parseBlameXml(stdout);
 		} catch (error: any) {
 			if (error.stderr?.includes('not found')) {
-				throw new SvnError(`File not found in repository: ${filePath}`);
+				throw new error(this, `File not found in repository: ${filePath}`);
 			}
 			throw new SvnCommandError(`Failed to get blame for ${filePath}`, error.message, error.code);
 		}
@@ -814,46 +813,41 @@ export class SVNClient {
 		
 		const repositoryUuidMatch = xmlOutput.match(/<uuid>(.*?)<\/uuid>/);
 		if (repositoryUuidMatch) info.repositoryUuid = repositoryUuidMatch[1];
-		
-		// Look for entry revision (working copy revision)
+				// Look for entry revision (working copy revision)
 		const entryRevisionMatch = xmlOutput.match(/<entry[^>]*revision="(\d+)"/);
 		if (entryRevisionMatch) {
 			info.revision = entryRevisionMatch[1];
-			svnInfo(entryRevisionMatch[1]);
+			debug(this, 'parseSvnInfo', `Entry revision: ${entryRevisionMatch[1]}`);
 		}
 		  // Look for last changed revision, author, and date in the commit section
 		for (const line of lines) {
 			if (line.includes('<commit')) {
-				inCommitSection = true;
-				// Check for revision attribute on the same line
+				inCommitSection = true;				// Check for revision attribute on the same line
 				const commitRevMatch = line.match(/revision="(\d+)"/);
 				if (commitRevMatch) {
-					svnInfo(commitRevMatch[1]);
+					debug(this, 'parseSvnInfo', `Commit revision: ${commitRevMatch[1]}`);
 					info.lastChangedRev = commitRevMatch[1];
 				}
 			}
-			
-			// Check for revision attribute on the next line after <commit
+					// Check for revision attribute on the next line after <commit
 			if (inCommitSection && !info.lastChangedRev && line.includes('revision=')) {
 				const revMatch = line.match(/revision="(\d+)"/);
 				if (revMatch) {
-					svnInfo(revMatch[1]);
+					debug(this, 'parseSvnInfo', `Revision: ${revMatch[1]}`);
 					info.lastChangedRev = revMatch[1];
 				}
 			}
 			
-			if (inCommitSection) {
-				if (line.includes('<author>')) {
+			if (inCommitSection) {				if (line.includes('<author>')) {
 					const authorMatch = line.match(/<author>(.*?)<\/author>/);
 					if (authorMatch) {
-						svnInfo(authorMatch[1]);
+						debug(this, 'parseSvnInfo', `Author: ${authorMatch[1]}`);
 						info.lastChangedAuthor = authorMatch[1];
 					}
-				}
-				if (line.includes('<date>')) {
+				}				if (line.includes('<date>')) {
 					const dateMatch = line.match(/<date>(.*?)<\/date>/);
 					if (dateMatch) {
-						svnInfo(dateMatch[1]);
+						debug(this, 'parseSvnInfo', `Date: ${dateMatch[1]}`);
 						info.lastChangedDate = dateMatch[1];
 					}
 				}
@@ -864,7 +858,7 @@ export class SVNClient {
 			}
 		}
 		
-		svnInfo('Parsed SVN Info:', info);
+		logInfo(this, 'parseSvnInfo', 'Parsed SVN Info:', info);
 		return info.url ? info as SvnInfo : null;
 	}
 
@@ -922,8 +916,8 @@ export class SVNClient {
 	private parseXmlLog(xmlOutput: string): SvnLogEntry[] {
 		const entries: SvnLogEntry[] = [];
 
-		svnInfo('parseXmlLog: Starting to parse XML, length:', String(xmlOutput.length));
-		svnInfo('parseXmlLog: First 500 chars:', xmlOutput.substring(0, 500));
+		logInfo(this, 'parseXmlLog: Starting to parse XML, length:', String(xmlOutput.length));
+		logInfo(this, 'parseXmlLog: First 500 chars:', xmlOutput.substring(0, 500));
 
 		// Simple XML parsing for SVN log entries
 		const logEntryRegex = /<logentry[^>]*revision="([^"]+)"[^>]*>([\s\S]*?)<\/logentry>/g;
@@ -935,7 +929,7 @@ export class SVNClient {
 			const entryContent = match[2];
 			const revision = match[1];
 
-			svnInfo(`parseXmlLog: Found logentry ${matchCount}, revision: ${revision}`);
+			logInfo(this, 'logInfo', `parseXmlLog: Found logentry ${matchCount}, revision: ${revision}`);
 
 			const authorMatch = entryContent.match(/<author>(.*?)<\/author>/);
 			const dateMatch = entryContent.match(/<date>(.*?)<\/date>/);
@@ -948,11 +942,11 @@ export class SVNClient {
 				message: messageMatch ? messageMatch[1].trim() : ''
 			};
 			
-			svnInfo('parseXmlLog: Parsed entry:', entry);
+			logInfo(this, 'parseXmlLog: Parsed entry:', entry);
 			entries.push(entry);
 		}
 
-		svnInfo(`parseXmlLog: Finished parsing, found ${entries.length} entries`);
+		logInfo(this, 'logInfo', `parseXmlLog: Finished parsing, found ${entries.length} entries`);
 		return entries;
 	}
 
@@ -978,7 +972,7 @@ export class SVNClient {
 			const command = `svnadmin create "${repoPath}"`;
 			await execPromise(command);
 
-			svnInfo(`SVN repository created at: ${repoPath}`);
+			logInfo(this, 'logInfo', `SVN repository created at: ${repoPath}`);
 		} catch (error) {
 			throw new Error(`Failed to create SVN repository: ${error.message}`);
 		}
@@ -992,16 +986,16 @@ export class SVNClient {
 		const normalizedPath1 = this.resolveAbsolutePath(path1).replace(/\\/g, '/').toLowerCase();
 		const normalizedPath2 = this.resolveAbsolutePath(path2).replace(/\\/g, '/').toLowerCase();
 		
-		svnDebug(`comparePaths: "${path1}" -> "${normalizedPath1}"`);
-		svnDebug(`comparePaths: "${path2}" -> "${normalizedPath2}"`);
+		debug(this, `comparePaths: "${path1}" -> "${normalizedPath1}"`);
+		debug(this, `comparePaths: "${path2}" -> "${normalizedPath2}"`);
 
 		// Direct comparison first
 		if (normalizedPath1 === normalizedPath2) {
-			svnDebug(`comparePaths: Direct match - TRUE`);
+			debug(this, `comparePaths: Direct match - TRUE`);
 			return true;
 		}
 
-		svnDebug(`comparePaths: No direct match - FALSE`);
+		debug(this, `comparePaths: No direct match - FALSE`);
 		return false;
 	}
 	
@@ -1017,7 +1011,7 @@ export class SVNClient {
 
 			// First check svn info to see if the directory exists in SVN
 			const command = `${this.svnPath} info "${dirPath}"`;
-			svnInfo(`Checking if directory is versioned: ${dirPath}`);
+			logInfo(this, 'logInfo', `Checking if directory is versioned: ${dirPath}`);
 
 			const { stdout, stderr } = await execPromise(command, { cwd: workingCopyRoot });
 			
@@ -1025,19 +1019,19 @@ export class SVNClient {
 			if (stdout && stdout.includes('Path:')) {
 				// Check if the directory has "Schedule: add" which means it's added but not committed
 				if (stdout.includes('Schedule: add')) {
-					svnInfo(`Directory ${dirPath} is added but not committed yet`);
+					logInfo(this, 'logInfo', `Directory ${dirPath} is added but not committed yet`);
 					return false; // Not yet committed to repository
 				}
 
-				svnInfo(`Directory ${dirPath} is versioned and committed`);
+				logInfo(this, 'logInfo', `Directory ${dirPath} is versioned and committed`);
 				return true;
 			}
 
-			svnInfo(`Directory ${dirPath} is not versioned (no info output)`);
+			logInfo(this, 'logInfo', `Directory ${dirPath} is not versioned (no info output)`);
 			return false;
 		} catch (error) {
 			// If svn info fails, the directory is likely not versioned
-			svnInfo(`Directory ${dirPath} is not versioned (svn info failed): ${error.message}`);
+			logInfo(this, 'logInfo', `Directory ${dirPath} is not versioned (svn info failed): ${error.message}`);
 			return false;
 		}
 	}
@@ -1057,7 +1051,7 @@ export class SVNClient {
 			
 			if (!isVersioned) {
 				// File is unversioned, add it
-				svnInfo(`File ${filePath} is not versioned. Adding it.`);
+				logInfo(this, 'logInfo', `File ${filePath} is not versioned. Adding it.`);
 				await this.add(filePath, false);
 			} else {
 				// File is already versioned, check its current status
@@ -1065,13 +1059,13 @@ export class SVNClient {
 				const fileStatus = status.find(s => this.comparePaths(s.filePath, filePath));
 				
 				if (fileStatus && fileStatus.status === 'A') {
-					svnInfo(`File ${filePath} is already added to SVN.`);
+					logInfo(this, 'logInfo', `File ${filePath} is already added to SVN.`);
 				} else {
-					svnInfo(`File ${filePath} is already versioned.`);
+					logInfo(this, 'logInfo', `File ${filePath} is already versioned.`);
 				}
 			}
 		} catch (error) {
-			svnError(`Error ensuring file is added: ${error.message}`);
+			error(this, `Error ensuring file is added: ${error.message}`);
 			throw new Error(`Failed to ensure file is added to SVN: ${error.message}`);
 		}
 	}
@@ -1080,12 +1074,12 @@ export class SVNClient {
 	 * Clear the status request cache to ensure fresh data after SVN operations
 	 */
 	private clearStatusCache(): void {
-		svnInfo(`Clearing status request cache`);
+		logInfo(this, 'logInfo', `Clearing status request cache`);
 		this.statusRequestCache.clear();
 		
 		// Notify DataStore to clear its cache as well
 		if (this.cacheInvalidationCallback) {
-			svnInfo(`Notifying DataStore to clear cache`);
+			logInfo(this, 'logInfo', `Notifying DataStore to clear cache`);
 			this.cacheInvalidationCallback();
 		}
 	}

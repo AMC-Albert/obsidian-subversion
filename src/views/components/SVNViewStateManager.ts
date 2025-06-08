@@ -1,5 +1,5 @@
 import { UIState } from '../SVNUIController';
-import { svnDebug, svnInfo, svnError } from '../../debug';
+import { debug, info, error, registerLoggerClass } from '@/utils/obsidian-logger';
 
 /**
  * Manages state tracking and hash calculations for the FileHistoryView
@@ -149,7 +149,7 @@ export class SVNViewStateManager {
 	 * Check if history data has meaningfully changed
 	 */	hasHistoryChanged(state: UIState): boolean {
 		if (!state.data) {
-			svnDebug('hasHistoryChanged: No data, returning true');
+			debug(this, 'hasHistoryChanged: No data, returning true');
 			return true;
 		}
 		
@@ -163,7 +163,7 @@ export class SVNViewStateManager {
 		const currentHistoryHash = JSON.stringify(historyData);
 		const changed = currentHistoryHash !== this.lastHistoryHash;
 		
-		svnInfo('hasHistoryChanged check:', {
+		info(this, 'hasHistoryChanged check:', {
 			currentHash: currentHistoryHash,
 			lastHash: this.lastHistoryHash,
 			changed,
@@ -174,7 +174,7 @@ export class SVNViewStateManager {
 		// Only update the stored hash if we're not in loading state
 		if (!state.showLoading) {
 			this.lastHistoryHash = currentHistoryHash;
-			svnInfo('Updated lastHistoryHash to:', this.lastHistoryHash);
+			info(this, 'Updated lastHistoryHash to:', this.lastHistoryHash);
 		}
 		return changed;
 	}
