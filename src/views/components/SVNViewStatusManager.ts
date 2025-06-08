@@ -1,6 +1,7 @@
 import { TFile } from 'obsidian';
 import { SVNClient } from '../../services/SVNClient';
 import { SVNFileData } from '../../services/SVNDataStore';
+import { SvnStatusCode } from '@/types';
 import { UIState } from '../SVNUIController';
 import { SVNStatusDisplay } from '.';
 import { SVNViewStateManager } from './SVNViewStateManager';
@@ -136,7 +137,7 @@ export class SVNViewStatusManager {
 			});
 			info(this, 'File status entry found:', fileStatusEntry);
 
-			if (fileStatusEntry && fileStatusEntry.status === '?') {
+			if (fileStatusEntry && fileStatusEntry.status === SvnStatusCode.UNVERSIONED) {
 				// Unversioned file: show simple status message
 				info(this, 'renderStatusWithData: Unversioned file status found in data, showing status message.');
 				container.empty();

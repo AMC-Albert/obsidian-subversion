@@ -1,5 +1,6 @@
 import { TFile } from 'obsidian';
 import { SVNClient } from '@/services';
+import { SvnStatusCode } from '@/types';
 import { UIState } from '../SVNUIController';
 import { 
 	SVNToolbar, 
@@ -115,7 +116,11 @@ export class SVNViewRenderer {
 				const directData = this.stateManager.getLastDirectStatusData();
 				if (directData) {
 					state.data.status = directData.status as any;
-					state.data.hasLocalChanges = directData.status.some((s: any) => s.status === 'M' || s.status === 'A' || s.status === 'D');
+					state.data.hasLocalChanges = directData.status.some((s: any) => 
+						s.status === SvnStatusCode.MODIFIED || 
+						s.status === SvnStatusCode.ADDED || 
+						s.status === SvnStatusCode.DELETED
+					);
 				}
 			}
 			

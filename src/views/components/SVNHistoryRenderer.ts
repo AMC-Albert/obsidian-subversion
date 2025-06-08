@@ -2,18 +2,18 @@ import { Notice, WorkspaceLeaf } from 'obsidian';
 import { ButtonComponent } from 'obsidian';
 import { SVNClient } from '../../services/SVNClient';
 import { DiffModal } from '../../modals/DiffModal';
-import { SvnLogEntry } from '../../types';
-import { svnDebug, svnInfo, svnError } from '../../debug';
+import { SvnLogEntry, SvnStatusCode } from '@/types';
+import { debug, info, error, registerLoggerClass } from '@/utils/obsidian-logger';
 
 export class SVNHistoryRenderer {
 	private svnClient: SVNClient;
 	private plugin: any;
 	private refreshCallback: () => void;
-
 	constructor(svnClient: SVNClient, plugin: any, refreshCallback: () => void) {
 		this.svnClient = svnClient;
 		this.plugin = plugin;
 		this.refreshCallback = refreshCallback;
+		registerLoggerClass(this, 'SVNHistoryRenderer');
 	}
 	/**
 	 * Add action buttons for a history item (used by data bus system)
@@ -25,21 +25,19 @@ export class SVNHistoryRenderer {
 				.setIcon('file-diff')
 				.setTooltip(`Show diff from r${history[index - 1].revision} to r${entry.revision}`)
 				.setClass('clickable-icon');
-			
 			diffBtn.buttonEl.addEventListener('click', (evt) => {
 				evt.preventDefault();
 				evt.stopPropagation();
-				this.showDiff(filePath, parseInt(history[index - 1].revision), parseInt(entry.revision));
+				this.showDiff(filePath, history[index - 1].revision, entry.revision);
 			});
 		}
 	}
-
 	private showDiff(filePath: string, fromRevision: number, toRevision: number): void {
 		// Use getDiff method from SVNClient - it accepts an optional revision parameter
 		this.svnClient.getDiff(filePath, toRevision.toString()).then((diffContent: string) => {
 			new DiffModal(this.plugin.app, diffContent, `r${fromRevision} → r${toRevision}`).open();
-		}).catch((error: any) => {
-			error(this, error);
+		}).catch((err: any) => {
+			error(this, 'Error showing diff:', err);
 			// Could show a notice here
 		});
 	}
@@ -50,10 +48,9 @@ export class SVNHistoryRenderer {
 			let hadModifications = false;
 			try {
 				const statusArray = await this.svnClient.getStatus(filePath);
-				
-				// Check if we have any results and if any file shows modifications
+						// Check if we have any results and if any file shows modifications
 				hadModifications = statusArray && statusArray.length > 0 && 
-								   statusArray.some(item => item.status.charAt(0) === 'M');
+								   statusArray.some(item => item.status === SvnStatusCode.MODIFIED);
 				
 				// Fallback: If status check returned empty, assume no modifications
 				if (!statusArray || statusArray.length === 0) {
@@ -71,7 +68,7 @@ export class SVNHistoryRenderer {
 			// Verify the checkout worked by checking the current revision
 			try {
 				const info = await this.svnClient.getInfo(filePath);
-				if (info && info.revision !== revision) {
+				if (info && info.revision.toString() !== revision) {
 					error(this, `Checkout may have failed: expected r${revision}, got r${info.revision}`);
 				}
 			} catch (verifyError) {

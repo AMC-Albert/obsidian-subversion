@@ -1,6 +1,7 @@
 import { TFile, setTooltip } from 'obsidian';
 import { SVNClient } from '../../services/SVNClient';
 import { SVNFileData } from '../../services/SVNDataStore';
+import { SvnStatusCode } from '@/types';
 import { UIState } from '../SVNUIController';
 import { SVNHistoryRenderer, SVNFileStateRenderer, SVNRepositoryHandler } from '.';
 import type ObsidianSvnPlugin from '../../main';
@@ -70,7 +71,7 @@ export class SVNViewHistoryManager {
 			this.fileStateRenderer.renderNotInSvn(container, currentFile);
 			return;
 		}		// Check if file is added but not committed
-		const isAddedNotCommitted = data.status.some((s: any) => s.status === 'A');
+		const isAddedNotCommitted = data.status.some((s: any) => s.status === SvnStatusCode.ADDED);
 		if (isAddedNotCommitted) {
 			// Show interactive file state UI in content area since status area only shows status
 			this.fileStateRenderer.renderAddedButNotCommitted(container, currentFile);

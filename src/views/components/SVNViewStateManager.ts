@@ -1,4 +1,5 @@
 import { UIState } from '../SVNUIController';
+import { SvnStatusCode } from '@/types';
 import { debug, info, error, registerLoggerClass } from '@/utils/obsidian-logger';
 
 /**
@@ -65,13 +66,10 @@ export class SVNViewStateManager {
 			filePath: currentFilePath,
 			fileStatus: currentFileStatus?.status,
 			fileStatusPath: currentFileStatus?.filePath,
-			totalStatusItems: state.data.status.length,
-			hasModifications: state.data.status.some((item: any) => {
-				return item.status && typeof item.status === 'string' && (
-					item.status.includes('M') || 
-					item.status.includes('A') || 
-					item.status.includes('D')
-				);
+			totalStatusItems: state.data.status.length,			hasModifications: state.data.status.some((item: any) => {
+				return item.status === SvnStatusCode.MODIFIED || 
+					   item.status === SvnStatusCode.ADDED || 
+					   item.status === SvnStatusCode.DELETED;
 			}),
 			timeSinceDirectUpdate: Date.now() - this.lastDirectStatusUpdateTime
 		};
@@ -190,7 +188,7 @@ export class SVNViewStateManager {
 		if (!data.isWorkingCopy) return 'repository-setup';
 		if (!data.isFileInSvn && data.status?.length === 0) return 'not-in-svn';
 		
-		const isAddedNotCommitted = data.status?.some((s: any) => s.status === 'A');
+		const isAddedNotCommitted = data.status?.some((s: any) => s.status === SvnStatusCode.ADDED);
 		if (isAddedNotCommitted) return 'added-not-committed';
 		
 		if (!data.history || data.history.length === 0) return 'no-history';

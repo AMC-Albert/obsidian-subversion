@@ -2,8 +2,9 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import { join, dirname, isAbsolute, relative } from 'path'; // Added relative
 import { existsSync, statSync } from 'fs';
-import { SvnLogEntry, SvnStatus, SvnCommandResult, SvnBlameEntry, SvnInfo } from '@/types';
+import { SvnLogEntry, SvnStatus, SvnCommandResult, SvnBlameEntry, SvnInfo, SvnStatusCode, SvnPropertyStatus, SvnOperationOptions } from '@/types';
 import { SvnError, SvnNotInstalledError, NotWorkingCopyError, SvnCommandError } from '@/utils/errors';
+import { SVNStatusUtils } from '@/utils';
 import { debug, info as logInfo, warn, error, registerLoggerClass } from '@/utils/obsidian-logger';
 
 const execPromise = promisify(exec);
@@ -142,10 +143,9 @@ export class SVNClient {
 	private async enrichHistoryWithSizes(filePath: string, entries: SvnLogEntry[]): Promise<SvnLogEntry[]> {
 		const enrichedEntries: SvnLogEntry[] = [];
 		
-		for (const entry of entries) {			try {
-				const [size, repoSize] = await Promise.all([
-					this.getFileSizeAtRevision(filePath, entry.revision),
-					this.getRevisionStorageSize(entry.revision)
+		for (const entry of entries) {			try {				const [size, repoSize] = await Promise.all([
+					this.getFileSizeAtRevision(filePath, entry.revision.toString()),
+					this.getRevisionStorageSize(entry.revision.toString())
 				]);
 				
 				enrichedEntries.push({
@@ -166,7 +166,7 @@ export class SVNClient {
 	async getFileRevisions(filePath: string): Promise<string[]> {
 		try {
 			const history = await this.getFileHistory(filePath);
-			return history.map(entry => entry.revision);
+			return history.map(entry => entry.revision.toString());
 		} catch (error) {
 			throw new Error(`Failed to get file revisions: ${error.message}`);
 		}
@@ -377,7 +377,7 @@ export class SVNClient {
 				const status = await this.getStatus(parentDir);
 				const dirStatus = status.find(s => this.comparePaths(s.filePath, parentDir));
 				
-				if (dirStatus && dirStatus.status === 'A') {
+				if (dirStatus && dirStatus.status === SvnStatusCode.ADDED) {
 					// Directory is added but not committed
 					dirsToCommit.unshift(parentDir);
 					logInfo(this, 'logInfo', `Directory ${parentDir} is added but needs to be committed`);
@@ -744,11 +744,10 @@ export class SVNClient {
 					lineNumber = parseInt(lineNumMatch[1]);
 				}
 			}
-			
-			if (line.includes('<commit')) {
+					if (line.includes('<commit')) {
 				const revMatch = line.match(/revision="(\d+)"/);
 				if (revMatch) {
-					currentEntry.revision = revMatch[1];
+					currentEntry.revision = parseInt(revMatch[1], 10);
 				}
 			}
 			
@@ -813,10 +812,10 @@ export class SVNClient {
 		
 		const repositoryUuidMatch = xmlOutput.match(/<uuid>(.*?)<\/uuid>/);
 		if (repositoryUuidMatch) info.repositoryUuid = repositoryUuidMatch[1];
-				// Look for entry revision (working copy revision)
+		// Look for entry revision (working copy revision)
 		const entryRevisionMatch = xmlOutput.match(/<entry[^>]*revision="(\d+)"/);
 		if (entryRevisionMatch) {
-			info.revision = entryRevisionMatch[1];
+			info.revision = parseInt(entryRevisionMatch[1], 10);
 			debug(this, 'parseSvnInfo', `Entry revision: ${entryRevisionMatch[1]}`);
 		}
 		  // Look for last changed revision, author, and date in the commit section
@@ -826,15 +825,14 @@ export class SVNClient {
 				const commitRevMatch = line.match(/revision="(\d+)"/);
 				if (commitRevMatch) {
 					debug(this, 'parseSvnInfo', `Commit revision: ${commitRevMatch[1]}`);
-					info.lastChangedRev = commitRevMatch[1];
+					info.lastChangedRev = parseInt(commitRevMatch[1], 10);
 				}
-			}
-					// Check for revision attribute on the next line after <commit
+			}			// Check for revision attribute on the next line after <commit
 			if (inCommitSection && !info.lastChangedRev && line.includes('revision=')) {
 				const revMatch = line.match(/revision="(\d+)"/);
 				if (revMatch) {
 					debug(this, 'parseSvnInfo', `Revision: ${revMatch[1]}`);
-					info.lastChangedRev = revMatch[1];
+					info.lastChangedRev = parseInt(revMatch[1], 10);
 				}
 			}
 			
@@ -934,9 +932,8 @@ export class SVNClient {
 			const authorMatch = entryContent.match(/<author>(.*?)<\/author>/);
 			const dateMatch = entryContent.match(/<date>(.*?)<\/date>/);
 			const messageMatch = entryContent.match(/<msg>([\s\S]*?)<\/msg>/);
-			
-			const entry = {
-				revision: revision,
+					const entry: SvnLogEntry = {
+				revision: parseInt(revision, 10),
 				author: authorMatch ? authorMatch[1] : 'Unknown',
 				date: dateMatch ? dateMatch[1] : '',
 				message: messageMatch ? messageMatch[1].trim() : ''
@@ -948,16 +945,50 @@ export class SVNClient {
 
 		logInfo(this, 'logInfo', `parseXmlLog: Finished parsing, found ${entries.length} entries`);
 		return entries;
-	}
-
-	private parseStatus(statusOutput: string): SvnStatus[] {
+	}	private parseStatus(statusOutput: string): SvnStatus[] {
 		const lines = statusOutput.split('\n').filter(line => line.trim() !== '');
-		return lines.map(line => ({
-			status: line.charAt(0),
-			filePath: line.substring(8).trim()
-		}));
+		return lines.map(line => {
+			// SVN status format: first char is content status, second is property status, then spaces, then path
+			const contentStatusChar = line.charAt(0) || ' ';
+			const propertyStatusChar = line.charAt(1) || ' ';
+			const filePath = line.substring(8).trim(); // Skip the status columns and spaces
+					// Convert string status codes to enums
+			const contentStatus = this.convertCharToStatusCode(contentStatusChar);
+			const propertyStatus = propertyStatusChar !== ' ' ? 
+				(propertyStatusChar === 'M' ? SvnPropertyStatus.MODIFIED : 
+				 propertyStatusChar === 'C' ? SvnPropertyStatus.CONFLICTED : 
+				 SvnPropertyStatus.NORMAL) : undefined;
+			
+			return {
+				status: contentStatus,
+				propertyStatus: propertyStatus,
+				filePath: filePath,
+				locked: line.charAt(2) === 'L', // Third column indicates lock status
+				workingCopyLocked: line.charAt(5) === 'K' // Sixth column indicates working copy lock
+			};
+		});
 	}
 	
+	/**
+	 * Convert single character SVN status code to enum
+	 */
+	private convertCharToStatusCode(statusChar: string): SvnStatusCode {
+		switch (statusChar) {
+			case 'M': return SvnStatusCode.MODIFIED;
+			case 'A': return SvnStatusCode.ADDED;
+			case 'D': return SvnStatusCode.DELETED;
+			case 'R': return SvnStatusCode.REPLACED;
+			case 'C': return SvnStatusCode.CONFLICTED;
+			case '?': return SvnStatusCode.UNVERSIONED;
+			case '!': return SvnStatusCode.MISSING;
+			case 'I': return SvnStatusCode.IGNORED;
+			case 'X': return SvnStatusCode.EXTERNAL;
+			case ' ': return SvnStatusCode.NORMAL;			default: 
+				warn(this, 'convertCharToStatusCode', `Unknown SVN status code: ${statusChar}, defaulting to NORMAL`);
+				return SvnStatusCode.NORMAL;
+		}
+	}
+
 	async createRepository(repoName: string): Promise<void> {
 		try {
 			if (!this.vaultPath) {
@@ -1058,7 +1089,7 @@ export class SVNClient {
 				const status = await this.getStatus(filePath);
 				const fileStatus = status.find(s => this.comparePaths(s.filePath, filePath));
 				
-				if (fileStatus && fileStatus.status === 'A') {
+				if (fileStatus && fileStatus.status === SvnStatusCode.ADDED) {
 					logInfo(this, 'logInfo', `File ${filePath} is already added to SVN.`);
 				} else {
 					logInfo(this, 'logInfo', `File ${filePath} is already versioned.`);

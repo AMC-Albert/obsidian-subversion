@@ -7,8 +7,7 @@ export class SVNConstants {
 	 * 🎨 ICON CUSTOMIZATION
 	 * All icons used throughout the SVN plugin are defined here.
 	 * You can customize any icon by changing the unicode symbol below:
-	 */
-	static readonly ICONS = {
+	 */	static readonly ICONS = {
 		// 📁 File Status Icons - Used for actual SVN file states
 		MODIFIED: '✱', // Files with local changes
 		ADDED: '+', // Files staged for addition
@@ -18,6 +17,8 @@ export class SVNConstants {
 		UNVERSIONED: '?', // Files not tracked by SVN
 		MISSING: '⨉', // Files missing from working copy
 		UP_TO_DATE: '✓', // Files with no changes
+		IGNORED: 'I', // Files matching ignore patterns
+		EXTERNAL: 'X', // External references
 		
 		// 🚀 Special Status Icons - Used for system states
 		NOT_IN_WORKING_COPY: '▢', // File/folder not in SVN repository
@@ -40,6 +41,8 @@ export class SVNConstants {
 		UNVERSIONED: 'Unversioned',
 		MISSING: 'Missing',
 		UP_TO_DATE: 'Up to date',
+		IGNORED: 'Ignored',
+		EXTERNAL: 'External',
 		
 		// Special Status Messages
 		NOT_IN_WORKING_COPY: 'Not in SVN working copy',
@@ -69,7 +72,10 @@ export class SVNConstants {
 		UP_TO_DATE: 'svn-status-clean',
 		WARNING: 'svn-status-warning',
 		ERROR: 'svn-status-error',
-		UNKNOWN: 'svn-status-unknown'
+		UNKNOWN: 'svn-status-unknown',
+		// Additional CSS classes for new status types
+		IGNORED: 'svn-status-ignored',
+		EXTERNAL: 'svn-status-external'
 	} as const;
 }
 

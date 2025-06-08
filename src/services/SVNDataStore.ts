@@ -1,6 +1,7 @@
 import { TFile } from 'obsidian';
 import { SVNClient } from './SVNClient';
-import { SvnLogEntry, SvnInfo, SvnStatus } from '../types';
+import { SvnLogEntry, SvnInfo, SvnStatus, SvnStatusCode } from '../types';
+import { SVNStatusUtils } from '@/utils';
 import { debug, info as logInfo, error, registerLoggerClass } from '@/utils/obsidian-logger';
 
 export interface SVNFileData {
@@ -14,10 +15,9 @@ export interface SVNFileData {
 	status: SvnStatus[];
 	info: SvnInfo | null;
 	history: SvnLogEntry[];
-	
-	// Computed properties
+		// Computed properties
 	hasLocalChanges: boolean;
-	currentRevision: string | null;
+	currentRevision: number | null;
 	lastUpdateTime: number;
 }
 
@@ -279,10 +279,8 @@ export class SVNDataStore {
 					finalIsFileInSvn = false;
 					logInfo(this, 'Re-check failed, assuming unversioned:', error.message);
 				}
-			}
-
-			// Compute derived properties
-			const hasLocalChanges = status.some(s => s.status === 'M' || s.status === 'A' || s.status === 'D');
+			}			// Compute derived properties with type-safe status checking
+			const hasLocalChanges = status.some(s => SVNStatusUtils.hasChanges(s.status));
 			const currentRevision = info?.revision || null;
 
 			// Create final data object
