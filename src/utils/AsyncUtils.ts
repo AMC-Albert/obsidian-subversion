@@ -1,5 +1,5 @@
 import { AsyncResult, CancellationToken, DebouncedFunction } from '@/types';
-import { debug, error } from '@/utils/obsidian-logger';
+import { loggerDebug, loggerError } from '@/utils/obsidian-logger';
 
 /**
  * Async utilities for better error handling and performance
@@ -18,7 +18,7 @@ export class AsyncUtils {
 		} catch (err: any) {
 			const errorMessage = err?.message || 'Unknown error';
 			if (errorContext) {
-				error(this, `${errorContext}: ${errorMessage}`, err);
+				loggerError(this, `${errorContext}: ${errorMessage}`, err);
 			}
 			return {
 				success: false,
@@ -82,7 +82,7 @@ export class AsyncUtils {
 				}
 				
 				const delay = baseDelay * Math.pow(2, attempt);
-				debug(this, `Retry attempt ${attempt + 1}/${maxRetries + 1} failed, retrying in ${delay}ms`);
+				loggerDebug(this, `Retry attempt ${attempt + 1}/${maxRetries + 1} failed, retrying in ${delay}ms`);
 				await this.sleep(delay);
 			}
 		}

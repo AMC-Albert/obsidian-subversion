@@ -1,7 +1,7 @@
 import { App, PluginSettingTab, Setting } from 'obsidian';
 import type ObsidianSvnPlugin from './main';
 import { SvnPluginSettings } from '@/types';
-import { debug, registerLoggerClass } from '@/utils/obsidian-logger';
+import { loggerDebug, registerLoggerClass } from '@/utils/obsidian-logger';
 
 export class SvnSettingTab extends PluginSettingTab {
 	plugin: ObsidianSvnPlugin;

@@ -1,6 +1,6 @@
 import { UIState } from '../SVNUIController';
 import { SvnStatusCode } from '@/types';
-import { debug, info, error, registerLoggerClass } from '@/utils/obsidian-logger';
+import { loggerDebug, loggerInfo, loggerError, registerLoggerClass } from '@/utils/obsidian-logger';
 
 /**
  * Manages state tracking and hash calculations for the FileHistoryView
@@ -22,6 +22,10 @@ export class SVNViewStateManager {
 	
 	// Centralized protection window constant
 	private static readonly PROTECTION_WINDOW_MS = 5000;
+
+	constructor() {
+		registerLoggerClass(this, 'SVNViewStateManager');
+	}
 
 	/**
 	 * Calculate a hash of the current state for change detection
@@ -147,7 +151,7 @@ export class SVNViewStateManager {
 	 * Check if history data has meaningfully changed
 	 */	hasHistoryChanged(state: UIState): boolean {
 		if (!state.data) {
-			debug(this, 'hasHistoryChanged: No data, returning true');
+			loggerDebug(this, 'hasHistoryChanged: No data, returning true');
 			return true;
 		}
 		
@@ -161,7 +165,7 @@ export class SVNViewStateManager {
 		const currentHistoryHash = JSON.stringify(historyData);
 		const changed = currentHistoryHash !== this.lastHistoryHash;
 		
-		info(this, 'hasHistoryChanged check:', {
+		loggerInfo(this, 'hasHistoryChanged check:', {
 			currentHash: currentHistoryHash,
 			lastHash: this.lastHistoryHash,
 			changed,
@@ -172,7 +176,7 @@ export class SVNViewStateManager {
 		// Only update the stored hash if we're not in loading state
 		if (!state.showLoading) {
 			this.lastHistoryHash = currentHistoryHash;
-			info(this, 'Updated lastHistoryHash to:', this.lastHistoryHash);
+			loggerInfo(this, 'Updated lastHistoryHash to:', this.lastHistoryHash);
 		}
 		return changed;
 	}
@@ -185,7 +189,7 @@ export class SVNViewStateManager {
 
 		// If state.data is null OR if state.data.file.path (the path of the file this SVNFileData is for)
 		// is null/empty, it implies no specific file context is established.
-		if (!state.data || !state.data.file.path) return 'no-file';
+		if (!state.data || !state.data.filePath) return 'no-file';
 
 		const fileDataInstance = state.data; // fileDataInstance is of type SVNFileData
 
@@ -193,9 +197,9 @@ export class SVNViewStateManager {
 
 		// Check for ADDED status first, as this is a specific state for files in the process of being versioned.
 		// The file path comparison needs to be robust.
-		const isAddedNotCommitted = fileDataInstance.status?.some(s => 
+		const isAddedNotCommitted = fileDataInstance.status?.some((s: any) => 
 			s.status === SvnStatusCode.ADDED && 
-			(s.filePath === fileDataInstance.file.path || this.comparePaths(s.filePath, fileDataInstance.file.path))
+			(s.filePath === fileDataInstance.filePath || this.comparePaths(s.filePath, fileDataInstance.filePath))
 		);
 		if (isAddedNotCommitted) {
 			return 'added-not-committed';
@@ -204,9 +208,9 @@ export class SVNViewStateManager {
 		if (!fileDataInstance.isFileInSvn) {
 			// If not explicitly added (checked above), and not in SVN, then it's unversioned or not tracked.
 			// The file path comparison needs to be robust.
-			if (fileDataInstance.status && fileDataInstance.status.some(s => 
+			if (fileDataInstance.status && fileDataInstance.status.some((s: any) => 
 				s.status === SvnStatusCode.UNVERSIONED && 
-				(s.filePath === fileDataInstance.file.path || this.comparePaths(s.filePath, fileDataInstance.file.path))
+				(s.filePath === fileDataInstance.filePath || this.comparePaths(s.filePath, fileDataInstance.filePath))
 			)) {
 				return 'unversioned-file';
 			}

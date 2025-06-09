@@ -331,7 +331,7 @@ export interface SvnFileData {
     isFileInSvn: boolean;
     isWorkingCopy: boolean;
     status: SvnStatus[];
-    info: SvnInfo | null;
+    svnInfo: SvnInfo | null;
     history: SvnLogEntry[];
     hasLocalChanges: boolean;
 }

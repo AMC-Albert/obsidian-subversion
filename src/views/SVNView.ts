@@ -13,7 +13,7 @@ import {
 	SVNRepositoryHandler 
 } from './components';
 import { SVNUIController, UIState } from './SVNUIController';
-import { debug, info, error, registerLoggerClass } from '@/utils/obsidian-logger';
+import { loggerDebug, loggerInfo, loggerError, registerLoggerClass } from '@/utils/obsidian-logger';
 
 export const FILE_HISTORY_VIEW_TYPE = PLUGIN_CONSTANTS.VIEW_TYPE;
 
@@ -151,7 +151,7 @@ export class SVNView extends ItemView {
 	 * Handle UI state changes - delegate to main renderer
 	 */
 	private async handleUIStateChange(state: UIState): Promise<void> {
-		info(this, 'handleUIStateChange called:', {
+		loggerInfo(this, 'handleUIStateChange called:', {
 			showLoading: state.showLoading,
 			hasData: !!state.data,
 			error: state.error,
@@ -161,7 +161,7 @@ export class SVNView extends ItemView {
 		
 		// Prevent overlapping state change handlers
 		if (!this.isInitialized) {
-			info(this, 'View not initialized, skipping state change');
+			loggerInfo(this, 'View not initialized, skipping state change');
 			return;
 		}
 		
@@ -169,7 +169,7 @@ export class SVNView extends ItemView {
 		await this.viewRenderer.handleUIStateChange(state, this.currentFile);
 				// Check if we're showing repository setup after rendering
 		const isShowingSetup = this.isShowingRepositorySetup();
-		info(this, 'Setup mode detected:', isShowingSetup);
+		loggerInfo(this, 'Setup mode detected:', isShowingSetup);
 		
 		// Update toolbar button states based on current state
 		if (isShowingSetup) {
@@ -201,7 +201,7 @@ export class SVNView extends ItemView {
 	 * Show repository setup and update toolbar state
 	 */
 	showRepositorySetup(): void {
-		info(this, 'Showing repository setup');
+		loggerInfo(this, 'Showing repository setup');
 		this.markUserInteraction();
 		
 		// Hide the info panel if it's currently visible
@@ -236,7 +236,7 @@ export class SVNView extends ItemView {
 	 * Handle settings changes from the main plugin
 	 */
 	onSettingsChanged(): void {
-		info(this, 'Settings changed, refreshing view');
+		loggerInfo(this, 'Settings changed, refreshing view');
 		// Always refresh the view when settings change to ensure all configurations are applied.
 		// refreshView() ultimately calls uiController.refreshCurrentFile(), which bypasses the cache.
 		this.refreshView();
@@ -258,7 +258,7 @@ export class SVNView extends ItemView {
 			(contentArea.textContent?.includes('Create New Repository') ?? false) ||
 			(contentArea.textContent?.includes('Checkout Existing Repository') ?? false);
 
-		info(this, 'Repository setup check:', {
+		loggerInfo(this, 'Repository setup check:', {
 			hasSetupContent,
 			contentText: contentArea.textContent?.substring(0, 100)
 		});
@@ -271,7 +271,7 @@ export class SVNView extends ItemView {
 	 * Refresh all data (full refresh)
 	 */
 	async refreshData(): Promise<void> {
-		info(this, 'refreshData called');
+		loggerInfo(this, 'refreshData called');
 		await this.uiController.refreshCurrentFile();
 	}
 
@@ -286,7 +286,7 @@ export class SVNView extends ItemView {
 	 * Refresh only status data (lightweight refresh)
 	 */
 	async refreshStatus(): Promise<void> {
-		info(this, 'refreshStatus called');
+		loggerInfo(this, 'refreshStatus called');
 		await this.viewRenderer.refreshStatus(this.currentFile);
 	}
 
@@ -295,7 +295,7 @@ export class SVNView extends ItemView {
 	 * This is intended for background updates or light refreshes.
 	 */
 	async refreshFromCache(): Promise<void> {
-		info(this, 'refreshFromCache called');
+		loggerInfo(this, 'refreshFromCache called');
 		// Re-triggering setCurrentFile will use the SVNDataStore, which respects the cache.
 		// If the current file is null, it will effectively clear or set to a default state.
 		await this.uiController.setCurrentFile(this.currentFile);
@@ -328,7 +328,7 @@ export class SVNView extends ItemView {
 	 * Mark user interaction to prevent DOM rebuilding during button clicks
 	 */
 	private markUserInteraction(): void {
-		info(this, 'markUserInteraction called - activating protection');
+		loggerInfo(this, 'markUserInteraction called - activating protection');
 		this.viewRenderer.getStateManager().startUserInteraction();
 	}
 }

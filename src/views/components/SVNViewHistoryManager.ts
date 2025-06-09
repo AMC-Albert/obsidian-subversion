@@ -1,11 +1,10 @@
 import { TFile, setTooltip } from 'obsidian';
 import { SVNClient } from '../../services/SVNClient';
-import { SVNFileData } from '../../services/SVNDataStore';
-import { SvnStatusCode } from '@/types';
+import { SvnFileData } from '@/types';
 import { UIState } from '../SVNUIController';
 import { SVNHistoryRenderer, SVNFileStateRenderer, SVNRepositoryHandler } from '.';
 import type ObsidianSvnPlugin from '../../main';
-import { debug, info, error, registerLoggerClass } from '@/utils/obsidian-logger';
+import { loggerDebug, loggerInfo, loggerError, registerLoggerClass } from '@/utils/obsidian-logger';
 
 /**
  * Manages history rendering and content display for the FileHistoryView
@@ -30,6 +29,7 @@ export class SVNViewHistoryManager {
 		this.historyRenderer = historyRenderer;
 		this.fileStateRenderer = fileStateRenderer;
 		this.repositoryHandler = repositoryHandler;
+		registerLoggerClass(this, 'SVNViewHistoryManager');
 	}
 
 	/**
@@ -44,7 +44,7 @@ export class SVNViewHistoryManager {
 		lastContentType: string | null,
 		historyActuallyChanged: boolean
 	): void {
-		info(this, 'SVNViewHistoryManager.updateContentAreaDOM called', { 
+		loggerDebug(this, 'SVNViewHistoryManager.updateContentAreaDOM called', { 
 			newContentType, 
 			lastContentType, 
 			currentFile: currentFile?.path,
@@ -95,7 +95,7 @@ export class SVNViewHistoryManager {
 			case 'not-tracked-file':
 				// SVNFileStateRenderer.renderNotInSvn calls container.empty()
 				if (!currentFile) {
-					error(this, "Cannot render 'not-tracked-file': currentFile is null");
+					loggerError(this, "Cannot render 'not-tracked-file': currentFile is null");
 					if (lastContentType !== 'error') container.empty();
 					container.createEl('p', { text: 'Error: File context lost.', cls: 'mod-warning svn-error-message' });
 					return;
@@ -105,7 +105,7 @@ export class SVNViewHistoryManager {
 			case 'added-not-committed':
 				// SVNFileStateRenderer.renderAddedButNotCommitted calls container.empty()
 				if (!currentFile) {
-					error(this, "Cannot render 'added-not-committed': currentFile is null");
+					loggerError(this, "Cannot render 'added-not-committed': currentFile is null");
 					if (lastContentType !== 'error') container.empty();
 					container.createEl('p', { text: 'Error: File context lost.', cls: 'mod-warning svn-error-message' });
 					return;
@@ -123,7 +123,7 @@ export class SVNViewHistoryManager {
 				if (state.data && currentFile) {
 					this.renderHistoryWithData(container, state.data, currentFile, lastContentType, historyActuallyChanged);
 				} else {
-					error(this, "Cannot render history: data or currentFile is null for 'history' contentType", {hasData: !!state.data, hasFile: !!currentFile});
+					loggerError(this, "Cannot render history: data or currentFile is null for 'history' contentType", {hasData: !!state.data, hasFile: !!currentFile});
 					if (lastContentType !== 'error' || !container.querySelector('.mod-warning.svn-error-message')) {
 						container.empty();
 						container.createEl('p', { text: 'Error: Cannot display history due to missing data.', cls: 'mod-warning svn-error-message' });
@@ -131,7 +131,7 @@ export class SVNViewHistoryManager {
 				}
 				break;
 			default:
-				error(this, 'Unknown content type in SVNViewHistoryManager.updateContentAreaDOM:', newContentType);
+				loggerError(this, 'Unknown content type in SVNViewHistoryManager.updateContentAreaDOM:', newContentType);
 				if (lastContentType !== 'error' || !container.querySelector('.mod-warning.svn-error-message')) { // Avoid multiple error messages
 					container.empty();
 					container.createEl('p', { text: `Unknown view state: ${newContentType}`, cls: 'mod-warning svn-error-message' });
@@ -146,7 +146,7 @@ export class SVNViewHistoryManager {
 	renderHistoryContentWithState(container: HTMLElement, state: UIState, currentFile: TFile | null): void {
 		// ... old logic ...
 		// This should be replaced by calls to updateContentAreaDOM
-		info(this, "OLD renderHistoryContentWithState was called. This should be updated.");
+		loggerDebug(this, "OLD renderHistoryContentWithState was called. This should be updated.");
 		// Fallback to a simple clear and call to the new method for now
 		container.empty();
 		const newContentType = "unknown_fallback"; // Determine actual content type if possible
@@ -160,12 +160,12 @@ export class SVNViewHistoryManager {
 	 */
 	renderHistoryWithData(
 		container: HTMLElement, 
-		data: SVNFileData, 
+		data: SvnFileData, 
 		currentFile: TFile | null, // Though currentFile should always be non-null if we reach here with 'history' type
 		lastContentType: string | null,
 		historyContentActuallyChanged: boolean 
 	): void {
-		info(this, 'renderHistoryWithData called:', {
+		loggerDebug(this, 'renderHistoryWithData called:', {
 			filePath: currentFile?.path,
 			historyCount: data.history?.length || 0,
 			lastContentType,
@@ -178,7 +178,7 @@ export class SVNViewHistoryManager {
 		const needsFullRebuild = !historyList || lastContentType !== 'history' || historyContentActuallyChanged;
 		
 		if (needsFullRebuild) {
-			info(this, 'Rebuilding history list because:', { 
+			loggerDebug(this, 'Rebuilding history list because:', { 
 				listExists: !!historyList, 
 				lastContentTypeSVC: lastContentType, // SVC for "Subversion" to avoid conflict
 				historyContentActuallyChangedSVC: historyContentActuallyChanged // SVC for "Subversion"
@@ -186,7 +186,7 @@ export class SVNViewHistoryManager {
 			container.empty(); // Clear the container specifically for the history list
 			historyList = container.createEl('ul', { cls: 'svn-history-list' });
 			
-			data.history.forEach((entry, index) => {
+			data.history.forEach((entry: any, index: number) => {
 				this.createHistoryItem(historyList, entry, index, data.history, currentFile);
 			});
 		} else {
@@ -194,9 +194,9 @@ export class SVNViewHistoryManager {
 			// We might still need to update individual items if their content can change
 			// without triggering historyContentActuallyChanged (e.g., relative dates, though not used here).
 			// For now, just update action buttons as per existing logic.
-			info(this, 'Updating existing history items (actions only).');
+			loggerDebug(this, 'Updating existing history items (actions only).');
 			const existingItems = historyList.querySelectorAll('.svn-history-item');
-			data.history.forEach((entry, index) => {
+			data.history.forEach((entry: any, index: number) => {
 				const historyItem = existingItems[index] as HTMLElement;
 				if (historyItem) {
 					this.updateHistoryItemActions(historyItem, entry, index, data.history, currentFile);

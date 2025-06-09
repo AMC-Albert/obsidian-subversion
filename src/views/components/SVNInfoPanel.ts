@@ -2,7 +2,7 @@ import { TFile } from 'obsidian';
 import { join } from 'path';
 import { SVNClient } from '../../services/SVNClient';
 import type ObsidianSvnPlugin from '../../main';
-import { debug, info, error, registerLoggerClass } from '@/utils/obsidian-logger';
+import { loggerDebug, loggerInfo, loggerError, registerLoggerClass } from '@/utils/obsidian-logger';
 
 export class SVNInfoPanel {
 	private plugin: ObsidianSvnPlugin;
@@ -118,7 +118,7 @@ export class SVNInfoPanel {
 			await this.renderFileInfo(currentFile);
 			
 		} catch (error) {
-			error(this, 'Error getting SVN info:', error);
+			loggerError(this, 'Error getting SVN info:', error);
 			this.panelElement.createEl('p', { 
 				text: `Error: ${error.message}`,
 				cls: 'svn-info-error'
@@ -189,7 +189,7 @@ export class SVNInfoPanel {
 			}
 		} catch (error) {
 			// If we can't get file stats, just add basic info
-			error(this, 'Error getting file stats:', error);
+			loggerError(this, 'Error getting file stats:', error);
 		}
 
 		// Vault-specific info

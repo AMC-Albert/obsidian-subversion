@@ -5,7 +5,7 @@ import { registerCommands } from '@/core';
 import { SVNClient } from '@/services';
 import { SVNView as FileHistoryView, FILE_HISTORY_VIEW_TYPE } from '@/views';
 import { PLUGIN_CONSTANTS, DEFAULT_SETTINGS, SVN_ICON_SVG } from '@/core';
-import { initLogger, debug, info, error, warn, registerLoggerClass, initializeDebugSystem } from '@/utils/obsidian-logger';
+import { initLogger, loggerDebug, loggerInfo, loggerError, loggerWarn, registerLoggerClass, initializeDebugSystem, setLoggerPluginId } from '@/utils/obsidian-logger'; // Added setLoggerPluginId
 
 /**
  * Main plugin class for Obsidian SVN integration
@@ -19,11 +19,12 @@ export default class ObsidianSvnPlugin extends Plugin {
 	async onload() {
 		// Initialize logger with plugin instance
 		initLogger(this);
+        setLoggerPluginId(this.manifest.id); // Set plugin ID for stack parsing
 
 		registerLoggerClass(this, 'ObsidianSvnPlugin');
 		
 		// Initialize debug logging
-		debug(this, 'onload', `Loading ${PLUGIN_CONSTANTS.PLUGIN_NAME} plugin`);
+		loggerDebug(this, 'onload', `Loading ${PLUGIN_CONSTANTS.PLUGIN_NAME} plugin`);
 		
 		// Register SVN icon
 		addIcon(PLUGIN_CONSTANTS.ICON_ID, SVN_ICON_SVG);
@@ -181,14 +182,14 @@ export default class ObsidianSvnPlugin extends Plugin {
 		
 		// Don't automatically refresh views here - let user manually refresh if needed
 		// Automatic refresh on every settings keystroke creates race conditions
-		debug(this, 'SVN client updated, views will refresh on next user action');
+		loggerDebug(this, 'SVN client updated, views will refresh on next user action');
 	}
 
 	/**
 	 * Notify views that settings have changed
 	 */
 	private notifyViewsOfSettingsChange() {
-		debug(this, 'Notifying views of settings change');
+		loggerDebug(this, 'Notifying views of settings change');
 		let notifiedCount = 0;
 		this.app.workspace.iterateAllLeaves(leaf => {
 			if (leaf.view instanceof FileHistoryView) {
@@ -199,7 +200,7 @@ export default class ObsidianSvnPlugin extends Plugin {
 				}
 			}
 		});
-		info(this, `Notified ${notifiedCount} file history views of settings change`);
+		loggerInfo(this, `Notified ${notifiedCount} file history views of settings change`);
 	}
 
 	/**
@@ -213,7 +214,7 @@ export default class ObsidianSvnPlugin extends Plugin {
 				const newActiveFilePath = activeFile?.path ?? null;
 
 				if (this.lastActiveFile !== newActiveFilePath) {
-					info(this, `Observed active file change in main.ts. Old: ${this.lastActiveFile}, New: ${newActiveFilePath}. SVNView instances handle their own updates.`);
+					loggerInfo(this, `Observed active file change in main.ts. Old: ${this.lastActiveFile}, New: ${newActiveFilePath}. SVNView instances handle their own updates.`);
 					this.lastActiveFile = newActiveFilePath;
 					// No call to this.refreshFileHistoryViews() here.
 					// SVNView's internal 'active-leaf-change' listener calls its 'updateCurrentFile()',
@@ -293,7 +294,7 @@ export default class ObsidianSvnPlugin extends Plugin {
 						}, PLUGIN_CONSTANTS.UI.REFRESH_DELAY);
 					}
 				} catch (error) {
-					error(this, 'setupAutoCommit', 'Auto-commit failed:', error);
+					loggerError(this, 'setupAutoCommit', 'Auto-commit failed:', error);
 					// Don't show notice for auto-commit failures to avoid spam
 				}
 			})
@@ -309,7 +310,7 @@ export default class ObsidianSvnPlugin extends Plugin {
 	refreshFileHistoryViews() {
 		const now = Date.now();
 		if (now - this.lastRefreshTime < ObsidianSvnPlugin.REFRESH_THROTTLE_MS) {
-			debug(this, `Throttling refreshFileHistoryViews - last refresh ${now - this.lastRefreshTime}ms ago`);
+			loggerDebug(this, `Throttling refreshFileHistoryViews - last refresh ${now - this.lastRefreshTime}ms ago`);
 			return;
 		}
 		
@@ -322,7 +323,7 @@ export default class ObsidianSvnPlugin extends Plugin {
 				refreshedCount++;
 			}
 		});
-		debug(this, `Refreshed ${refreshedCount} file history views`);
+		loggerDebug(this, `Refreshed ${refreshedCount} file history views`);
 	}
 
 	/**
@@ -337,7 +338,7 @@ export default class ObsidianSvnPlugin extends Plugin {
 				refreshedCount++;
 			}
 		});
-		debug(this, `Requested cache-aware refresh in ${refreshedCount} file history views`);
+		loggerDebug(this, `Requested cache-aware refresh in ${refreshedCount} file history views`);
 	}
 	/**
 	 * Cleanup resources on plugin unload
@@ -348,7 +349,7 @@ export default class ObsidianSvnPlugin extends Plugin {
 			this.statusUpdateTimer = null;
 		}
 		// Cleanup debug logging
-		debug(this, 'Plugin cleanup completed');
+		loggerDebug(this, 'Plugin cleanup completed');
 	}
 }
 

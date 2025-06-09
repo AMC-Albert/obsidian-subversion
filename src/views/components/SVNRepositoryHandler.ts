@@ -3,23 +3,23 @@ import { SVNClient } from '../../services/SVNClient';
 import type ObsidianSvnPlugin from '../../main';
 import { CheckoutModal } from '../../modals/CheckoutModal';
 import { join } from 'path';
-import { debug, info, error, registerLoggerClass } from '@/utils/obsidian-logger';
+import { loggerDebug, loggerInfo, loggerError, registerLoggerClass } from '@/utils/obsidian-logger';
 
 export class SVNRepositoryHandler {
     private plugin: ObsidianSvnPlugin;
     private svnClient: SVNClient;
     private onRefresh: () => void;
-    private onUserInteraction?: () => void;    constructor(plugin: ObsidianSvnPlugin, svnClient: SVNClient, onRefresh: () => void, onUserInteraction?: () => void) {
+    private onUserInteraction?: () => void;
+    constructor(plugin: ObsidianSvnPlugin, svnClient: SVNClient, onRefresh: () => void, onUserInteraction?: () => void) {
         this.plugin = plugin;
         this.svnClient = svnClient;
         this.onRefresh = onRefresh;
         this.onUserInteraction = onUserInteraction;
         registerLoggerClass(this, 'SVNRepositoryHandler');
-    }async validateRepository(): Promise<{ isValid: boolean; repoPath?: string; error?: string }> {
+    }
+    async validateRepository(): Promise<{ isValid: boolean; repoPath?: string; error?: string }> {
         try {
             const settings = this.plugin.settings;
-            //debug(this, validateRepository - full settings:', settings);
-            //debug(this, validateRepository - repositoryName:', settings.repositoryName);
 
             if (!settings.repositoryName) {
                 return { 
@@ -38,9 +38,6 @@ export class SVNRepositoryHandler {
 
             const hiddenRepoName = `.${settings.repositoryName}`;
             const repoPath = join(vaultPath, hiddenRepoName);
-
-            //debug(this, validateRepository - hiddenRepoName:', hiddenRepoName);
-            //debug(this, validateRepository - repoPath:', repoPath);
 
             // Check if repository exists
             const fs = require('fs');
@@ -109,7 +106,7 @@ export class SVNRepositoryHandler {
                         (this.plugin.app as any).setting.open();
                         (this.plugin.app as any).setting.openTabById(this.plugin.manifest.id);
                     } catch (error) {
-                        error(this, 'Failed to open settings:', error);
+                        loggerError(this, 'Failed to open settings:', error);
                     }
                 });
         } else {
@@ -200,7 +197,7 @@ export class SVNRepositoryHandler {
             
             await this.initWorkingCopy(repoPath, currentFile);
         } catch (error) {
-            error(this, 'Failed to create repository:', error);
+            loggerError(this, 'Failed to create repository:', error);
             new Notice(`Failed to create repository: ${error.message}`);
         }
     }
@@ -219,7 +216,7 @@ export class SVNRepositoryHandler {
             new Notice('Repository checked out successfully');
             this.onRefresh();
         } catch (error) {
-            error(this, 'Failed to checkout repository:', error);
+            loggerError(this, 'Failed to checkout repository:', error);
             new Notice(`Failed to checkout repository: ${error.message}`);
         }
     }    private async initWorkingCopy(repoPath: string, currentFile: TFile | null): Promise<void> {
@@ -237,7 +234,7 @@ export class SVNRepositoryHandler {
             new Notice('Working copy initialized successfully');
             this.onRefresh();
         } catch (error) {
-            error(this, 'Failed to initialize working copy:', error);
+            loggerError(this, 'Failed to initialize working copy:', error);
             new Notice(`Failed to initialize working copy: ${error.message}`);
         }
     }    private async showCheckoutModal(currentFile: TFile | null): Promise<void> {
@@ -280,7 +277,7 @@ export class SVNRepositoryHandler {
             new Notice('External repository checked out successfully');
             this.onRefresh();
         } catch (error) {
-            error(this, 'Failed to checkout external repository:', error);
+            loggerError(this, 'Failed to checkout external repository:', error);
             new Notice(`Failed to checkout repository: ${error.message}`);
         }
     }

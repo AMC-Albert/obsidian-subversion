@@ -3,7 +3,7 @@ import { SVNClient } from '../../services/SVNClient';
 import { SVNStatusUtils } from '../../utils/SVNStatusUtils';
 import { SVNConstants } from '../../utils/SVNConstants';
 import { SvnStatusCode } from '@/types';
-import { debug, info, error, registerLoggerClass } from '@/utils/obsidian-logger';
+import { loggerDebug, loggerInfo, loggerError, registerLoggerClass } from '@/utils/obsidian-logger';
 
 export class SVNStatusDisplay {
 	private svnClient: SVNClient;
@@ -16,7 +16,7 @@ export class SVNStatusDisplay {
 	}
 	async render(currentFile: TFile | null): Promise<DocumentFragment | null> {
 		if (this.isRendering && this.lastRenderPromise) {
-			debug(this, 'Already rendering, awaiting existing promise for DocumentFragment');
+			loggerDebug(this, 'Already rendering, awaiting existing promise for DocumentFragment');
 			// The existing promise should resolve to DocumentFragment | null
 			return this.lastRenderPromise;
 		}
@@ -55,12 +55,12 @@ export class SVNStatusDisplay {
 		// It doesn't call container.empty() anymore.
 		try {
 			const isWorkingCopy = await this.svnClient.isWorkingCopy(currentFile.path);
-			debug(this, 'isWorkingCopy check:', {
+			loggerDebug(this, 'isWorkingCopy check:', {
 				filePath: currentFile.path,
 				isWorkingCopy: isWorkingCopy
 			});
 			if (!isWorkingCopy) {
-				debug(this, "File not in working copy, showing icon message");
+				loggerDebug(this, "File not in working copy, showing icon message");
 				const notInWcEl = statusEl.createEl('span', { cls: 'svn-status-text' });
 				this.createStatusWithIcon(notInWcEl, SVNConstants.ICONS.NOT_IN_WORKING_COPY, SVNConstants.MESSAGES.NOT_IN_WORKING_COPY, SVNConstants.CSS_CLASSES.WARNING);
 				return;
@@ -92,7 +92,7 @@ export class SVNStatusDisplay {
 					});
 				}
 			} else {
-				debug(this, "No revision info available. svnInfo:", svnInfo);
+				loggerDebug(this, "No revision info available. svnInfo:", svnInfo);
 			}
 			
 			const statusArray = await this.svnClient.getStatus(currentFile.path);
@@ -131,7 +131,7 @@ export class SVNStatusDisplay {
 				}
 			}
 		} catch (err) {
-			error(this, 'Error in renderStatusContent:', err);
+			loggerError(this, 'Error in renderStatusContent:', err);
 			statusEl.empty(); // Clear any partial content on error
 			const errorEl = statusEl.createEl('span', { cls: 'svn-status-text' });
 			this.createStatusWithIcon(errorEl, SVNConstants.ICONS.ERROR, SVNConstants.MESSAGES.ERROR_GETTING_STATUS, SVNConstants.CSS_CLASSES.ERROR);
@@ -168,11 +168,11 @@ export class SVNStatusDisplay {
 			const hasChanges = diff.trim().length > 0;
 			// Only log if there's a discrepancy (status shows modified but no diff)
 			if (!hasChanges) {
-				debug(this, `File ${filePath} shows as modified but has no diff content - likely reverted`);
+				loggerDebug(this, `File ${filePath} shows as modified but has no diff content - likely reverted`);
 			}
 			return hasChanges;
 		} catch (err) {
-			error(this, 'Error checking for actual changes:', err);
+			loggerError(this, 'Error checking for actual changes:', err);
 			// If we can't get diff, assume there are changes to be safe
 			return true;
 		}

@@ -2,7 +2,7 @@ import { ButtonComponent, TFile, Notice } from 'obsidian';
 import { SVNClient } from '../../services/SVNClient';
 import type ObsidianSvnPlugin from '../../main';
 import { SVNFileActions } from './SVNFileActions';
-import { debug, info, error, registerLoggerClass } from '@/utils/obsidian-logger';
+import { loggerDebug, loggerInfo, loggerError, registerLoggerClass } from '@/utils/obsidian-logger';
 
 export class SVNToolbar {
 	private plugin: ObsidianSvnPlugin;
@@ -87,7 +87,7 @@ export class SVNToolbar {
 	 * Enable or disable the toolbar
 	 */
 	setEnabled(enabled: boolean): void {
-		info(this, `Setting toolbar enabled: ${enabled}`);
+		loggerInfo(this, `Setting toolbar enabled: ${enabled}`);
 		const container = this.containerEl;
 		if (!container) return;
 		

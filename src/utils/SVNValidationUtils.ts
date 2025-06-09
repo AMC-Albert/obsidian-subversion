@@ -1,5 +1,5 @@
 import { SvnStatus, SvnLogEntry, SvnInfo } from '@/types';
-import { debug, warn } from '@/utils/obsidian-logger';
+import { loggerDebug, loggerWarn } from '@/utils/obsidian-logger';
 
 /**
  * Validation utilities for SVN data structures
@@ -10,12 +10,12 @@ export class SVNValidationUtils {
 	 */
 	static validateStatus(status: any): SvnStatus | null {
 		if (!status || typeof status !== 'object') {
-			warn(this, 'Invalid status object:', status);
+			loggerWarn(this, 'Invalid status object:', status);
 			return null;
 		}
 
 		if (typeof status.filePath !== 'string' || !status.filePath.trim()) {
-			warn(this, 'Status missing valid filePath:', status);
+			loggerWarn(this, 'Status missing valid filePath:', status);
 			return null;
 		}
 
@@ -28,7 +28,7 @@ export class SVNValidationUtils {
 			workingCopyLocked: Boolean(status.workingCopyLocked)
 		};
 
-		debug(this, 'Validated status:', normalizedStatus);
+		loggerDebug(this, 'Validated status:', normalizedStatus);
 		return normalizedStatus;
 	}
 
@@ -37,7 +37,7 @@ export class SVNValidationUtils {
 	 */
 	static validateLogEntry(entry: any): SvnLogEntry | null {
 		if (!entry || typeof entry !== 'object') {
-			warn(this, 'Invalid log entry object:', entry);
+			loggerWarn(this, 'Invalid log entry object:', entry);
 			return null;
 		}
 
@@ -48,11 +48,11 @@ export class SVNValidationUtils {
 		} else if (typeof entry.revision === 'string') {
 			revision = parseInt(entry.revision, 10);
 			if (isNaN(revision)) {
-				warn(this, 'Invalid revision in log entry:', entry.revision);
+				loggerWarn(this, 'Invalid revision in log entry:', entry.revision);
 				return null;
 			}
 		} else {
-			warn(this, 'Missing or invalid revision in log entry:', entry);
+			loggerWarn(this, 'Missing or invalid revision in log entry:', entry);
 			return null;
 		}
 
@@ -66,7 +66,7 @@ export class SVNValidationUtils {
 			changedPaths: Array.isArray(entry.changedPaths) ? entry.changedPaths : undefined
 		};
 
-		debug(this, 'Validated log entry:', normalizedEntry);
+		loggerDebug(this, 'Validated log entry:', normalizedEntry);
 		return normalizedEntry;
 	}
 
@@ -75,12 +75,12 @@ export class SVNValidationUtils {
 	 */
 	static validateInfo(info: any): SvnInfo | null {
 		if (!info || typeof info !== 'object') {
-			warn(this, 'Invalid info object:', info);
+			loggerWarn(this, 'Invalid info object:', info);
 			return null;
 		}
 
 		if (typeof info.url !== 'string' || !info.url.trim()) {
-			warn(this, 'Info missing valid URL:', info);
+			loggerWarn(this, 'Info missing valid URL:', info);
 			return null;
 		}
 
@@ -103,7 +103,7 @@ export class SVNValidationUtils {
 			schedule: this.validateSchedule(info.schedule)
 		};
 
-		debug(this, 'Validated info:', normalizedInfo);
+		loggerDebug(this, 'Validated info:', normalizedInfo);
 		return normalizedInfo;
 	}
 
@@ -138,7 +138,7 @@ export class SVNValidationUtils {
 	 */
 	static validateFilePath(filePath: string): string | null {
 		if (typeof filePath !== 'string' || !filePath.trim()) {
-			warn(this, 'Invalid file path:', filePath);
+			loggerWarn(this, 'Invalid file path:', filePath);
 			return null;
 		}
 
@@ -146,7 +146,7 @@ export class SVNValidationUtils {
 		
 		// Check for invalid characters
 		if (normalized.includes('//') || normalized.includes('/../')) {
-			warn(this, 'File path contains invalid sequences:', normalized);
+			loggerWarn(this, 'File path contains invalid sequences:', normalized);
 			return null;
 		}
 
@@ -158,7 +158,7 @@ export class SVNValidationUtils {
 	 */
 	static validateStatusArray(statusArray: any[]): SvnStatus[] {
 		if (!Array.isArray(statusArray)) {
-			warn(this, 'Expected array for status validation, got:', typeof statusArray);
+			loggerWarn(this, 'Expected array for status validation, got:', typeof statusArray);
 			return [];
 		}
 
@@ -172,7 +172,7 @@ export class SVNValidationUtils {
 	 */
 	static validateLogEntryArray(logArray: any[]): SvnLogEntry[] {
 		if (!Array.isArray(logArray)) {
-			warn(this, 'Expected array for log validation, got:', typeof logArray);
+			loggerWarn(this, 'Expected array for log validation, got:', typeof logArray);
 			return [];
 		}
 
