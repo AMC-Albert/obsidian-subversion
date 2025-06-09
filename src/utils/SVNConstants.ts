@@ -22,6 +22,7 @@ export class SVNConstants {
 		
 		// 🚀 Special Status Icons - Used for system states
 		NOT_IN_WORKING_COPY: '▢', // File/folder not in SVN repository
+		INFO: 'ℹ', // Informational messages
 		ERROR: '⨉', // Error states (failed operations)
 		LOADING: '↻', // Loading/processing states
 		UNKNOWN: '?' // Unknown or unexpected states
@@ -72,6 +73,7 @@ export class SVNConstants {
 		UP_TO_DATE: 'svn-status-clean',
 		WARNING: 'svn-status-warning',
 		ERROR: 'svn-status-error',
+		INFO: 'svn-status-info', // Added for informational messages
 		UNKNOWN: 'svn-status-unknown',
 		// Additional CSS classes for new status types
 		IGNORED: 'svn-status-ignored',

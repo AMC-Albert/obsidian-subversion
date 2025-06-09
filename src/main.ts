@@ -5,7 +5,7 @@ import { registerCommands } from '@/core';
 import { SVNClient } from '@/services';
 import { SVNView as FileHistoryView, FILE_HISTORY_VIEW_TYPE } from '@/views';
 import { PLUGIN_CONSTANTS, DEFAULT_SETTINGS, SVN_ICON_SVG } from '@/core';
-import { initLogger, debug, info, error, warn, registerLoggerClass } from '@/utils/obsidian-logger';
+import { initLogger, debug, info, error, warn, registerLoggerClass, initializeDebugSystem } from '@/utils/obsidian-logger';
 
 /**
  * Main plugin class for Obsidian SVN integration
@@ -15,9 +15,11 @@ export default class ObsidianSvnPlugin extends Plugin {
 	settings: SvnPluginSettings;
 	svnClient: SVNClient;
 	private statusUpdateTimer: number | null = null;
-	private lastActiveFile: string | null = null;	async onload() {
+	private lastActiveFile: string | null = null;
+	async onload() {
 		// Initialize logger with plugin instance
 		initLogger(this);
+
 		registerLoggerClass(this, 'ObsidianSvnPlugin');
 		
 		// Initialize debug logging
@@ -42,6 +44,11 @@ export default class ObsidianSvnPlugin extends Plugin {
 
 		// Initialize workspace
 		this.initializeWorkspace();
+
+		// Ensure debug system persists after Obsidian layout is ready (handles reloads/rebuilds)
+		this.app.workspace.onLayoutReady(() => {
+			initializeDebugSystem();
+		});
 	}
 
 	onunload() {

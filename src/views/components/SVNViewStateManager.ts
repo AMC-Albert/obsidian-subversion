@@ -191,27 +191,62 @@ export class SVNViewStateManager {
 
 		if (!fileDataInstance.isWorkingCopy) return 'repository-setup';
 
+		// Check for ADDED status first, as this is a specific state for files in the process of being versioned.
+		// The file path comparison needs to be robust.
+		const isAddedNotCommitted = fileDataInstance.status?.some(s => 
+			s.status === SvnStatusCode.ADDED && 
+			(s.filePath === fileDataInstance.file.path || this.comparePaths(s.filePath, fileDataInstance.file.path))
+		);
+		if (isAddedNotCommitted) {
+			return 'added-not-committed';
+		}
+
 		if (!fileDataInstance.isFileInSvn) {
-			// Check if the status array (fileDataInstance.status) contains an UNVERSIONED status
-			// specifically for the file path this SVNFileData object represents (fileDataInstance.file.path).
-			if (fileDataInstance.status && fileDataInstance.status.some(s => s.status === SvnStatusCode.UNVERSIONED && s.filePath === fileDataInstance.file.path)) {
+			// If not explicitly added (checked above), and not in SVN, then it's unversioned or not tracked.
+			// The file path comparison needs to be robust.
+			if (fileDataInstance.status && fileDataInstance.status.some(s => 
+				s.status === SvnStatusCode.UNVERSIONED && 
+				(s.filePath === fileDataInstance.file.path || this.comparePaths(s.filePath, fileDataInstance.file.path))
+			)) {
 				return 'unversioned-file';
 			}
 			return 'not-tracked-file';
 		}
 
-		// File is in SVN (fileDataInstance.isFileInSvn is true)
-		// Check if the file itself (fileDataInstance.file.path) has an ADDED status in its status array.
-		const isAddedNotCommitted = fileDataInstance.status?.some(s => s.status === SvnStatusCode.ADDED && s.filePath === fileDataInstance.file.path);
-		if (isAddedNotCommitted) {
-			return 'added-not-committed';
-		}
-
+		// File is in SVN and not 'added-not-committed'
 		if (!fileDataInstance.history || fileDataInstance.history.length === 0) {
 			return 'no-history';
 		}
 
 		return 'history';
+	}
+
+	// Helper for robust path comparison
+	private comparePaths(path1: string, path2: string): boolean {
+		if (!path1 || !path2) return false;
+
+		const normalize = (p: string) => p.replace(/[\\\\\\/]+/g, '/').toLowerCase();
+		const nPath1 = normalize(path1);
+		const nPath2 = normalize(path2);
+
+		if (nPath1 === nPath2) return true;
+
+		// Check if one ends with the other, ensuring it's a full path segment
+		const checkEndsWith = (longer: string, shorter: string): boolean => {
+			if (longer.endsWith(shorter)) {
+				if (longer.length === shorter.length) return true; // Equality case
+				// Check if the character before the start of 'shorter' in 'longer' is a '/'
+				if (longer.charAt(longer.length - shorter.length - 1) === '/') {
+					return true;
+				}
+			}
+			return false;
+		};
+
+		if (checkEndsWith(nPath1, nPath2)) return true;
+		if (checkEndsWith(nPath2, nPath1)) return true;
+		
+		return false;
 	}
 
 	// Getters and setters for state tracking

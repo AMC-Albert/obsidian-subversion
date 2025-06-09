@@ -33,106 +33,169 @@ export class SVNViewHistoryManager {
 	}
 
 	/**
-	 * Render history content with state
+	 * Main method to update the content area DOM based on new and old states.
+	 * Decides whether to clear the container or let sub-renderers handle it.
 	 */
-	renderHistoryContentWithState(container: HTMLElement, state: UIState, currentFile: TFile | null): void {
-		if (state.showLoading) {
-			container.createEl('p', { 
-				text: 'Loading SVN data...', 
-				cls: 'svn-loading' 
-			});
-			return;
-		}
+	public updateContentAreaDOM(
+		container: HTMLElement,
+		state: UIState,
+		currentFile: TFile | null,
+		newContentType: string,
+		lastContentType: string | null,
+		historyActuallyChanged: boolean
+	): void {
+		info(this, 'SVNViewHistoryManager.updateContentAreaDOM called', { 
+			newContentType, 
+			lastContentType, 
+			currentFile: currentFile?.path,
+			historyActuallyChanged,
+			stateIsLoading: state.isLoading,
+			stateHasError: !!state.error,
+			stateHasData: !!state.data
+		});
 
-		if (state.error) {
-			container.createEl('p', { 
-				text: `Error: ${state.error}`,
-				cls: 'mod-warning'
-			});
-			return;
-		}
+		// Render based on newContentType. 
+		// Sub-renderers (SVNFileStateRenderer, SVNRepositoryHandler) are responsible for their own container.empty()
+		// if they perform a full takeover of the content area.
+		// This manager is responsible for clearing if it's rendering a simple text message directly
+		// AND the previous content type was different or the specific message element isn't already there.
 
-		// If there's no current file selected in the Obsidian view itself
-		if (!currentFile) {
-			container.createEl('p', { 
-				text: 'No file selected or file is not active.', // More descriptive
-				cls: 'svn-no-file' // Existing class
-			});
-			return;
+		switch (newContentType) {
+			case 'loading':
+				if (lastContentType !== 'loading' || !container.querySelector('.svn-loading')) {
+					container.empty();
+					container.createEl('p', { text: 'Loading SVN data...', cls: 'svn-loading' });
+				}
+				break;
+			case 'error':
+				if (lastContentType !== 'error' || !container.querySelector('.mod-warning.svn-error-message')) { // Added svn-error-message for specificity
+					container.empty();
+					container.createEl('p', { text: `Error: ${state.error}`, cls: 'mod-warning svn-error-message' });
+				}
+				break;
+			case 'no-file':
+				 if (lastContentType !== 'no-file' || !container.querySelector('.svn-no-file')) {
+					container.empty();
+					container.createEl('p', { text: 'No file selected or file is not active.', cls: 'svn-no-file' });
+				}
+				break;
+			case 'waiting-for-data':
+				// This state implies currentFile is set, but SVNDataStore hasn't returned data yet,
+				// and it's not an error, and not explicitly loading.
+				if (lastContentType !== 'waiting-for-data' || !container.querySelector('.svn-waiting-for-data')) {
+					container.empty();
+					container.createEl('p', { text: 'Waiting for file data...', cls: 'svn-waiting-for-data' });
+				}
+				break;
+			case 'repository-setup':
+				// SVNRepositoryHandler.renderRepositorySetup calls container.empty()
+				this.repositoryHandler.renderRepositorySetup(container, currentFile);
+				break;
+			case 'unversioned-file': 
+			case 'not-tracked-file':
+				// SVNFileStateRenderer.renderNotInSvn calls container.empty()
+				if (!currentFile) {
+					error(this, "Cannot render 'not-tracked-file': currentFile is null");
+					if (lastContentType !== 'error') container.empty();
+					container.createEl('p', { text: 'Error: File context lost.', cls: 'mod-warning svn-error-message' });
+					return;
+				}
+				this.fileStateRenderer.renderNotInSvn(container, currentFile);
+				break;
+			case 'added-not-committed':
+				// SVNFileStateRenderer.renderAddedButNotCommitted calls container.empty()
+				if (!currentFile) {
+					error(this, "Cannot render 'added-not-committed': currentFile is null");
+					if (lastContentType !== 'error') container.empty();
+					container.createEl('p', { text: 'Error: File context lost.', cls: 'mod-warning svn-error-message' });
+					return;
+				}
+				this.fileStateRenderer.renderAddedButNotCommitted(container, currentFile);
+				break;
+			case 'no-history':
+				// This implies state.data exists, isFileInSvn is true, and history is empty.
+				if (lastContentType !== 'no-history' || !container.querySelector('.svn-no-history')) {
+					container.empty();
+					container.createEl('p', { text: 'No history found for this file.', cls: 'svn-no-history' });
+				}
+				break;
+			case 'history':
+				if (state.data && currentFile) {
+					this.renderHistoryWithData(container, state.data, currentFile, lastContentType, historyActuallyChanged);
+				} else {
+					error(this, "Cannot render history: data or currentFile is null for 'history' contentType", {hasData: !!state.data, hasFile: !!currentFile});
+					if (lastContentType !== 'error' || !container.querySelector('.mod-warning.svn-error-message')) {
+						container.empty();
+						container.createEl('p', { text: 'Error: Cannot display history due to missing data.', cls: 'mod-warning svn-error-message' });
+					}
+				}
+				break;
+			default:
+				error(this, 'Unknown content type in SVNViewHistoryManager.updateContentAreaDOM:', newContentType);
+				if (lastContentType !== 'error' || !container.querySelector('.mod-warning.svn-error-message')) { // Avoid multiple error messages
+					container.empty();
+					container.createEl('p', { text: `Unknown view state: ${newContentType}`, cls: 'mod-warning svn-error-message' });
+				}
 		}
-        
-        // If a file is selected, but we don't have its SVN data yet (and not in loading/error state)
-		if (!state.data) { 
-			// This state implies currentFile is set, but SVNDataStore hasn't returned data yet,
-			// and it's not an error, and not explicitly loading.
-			// This can happen if SVNUIController initializes with currentFile but data is pending,
-			// and the initial render happens before showLoading is true or data arrives.
-			container.createEl('p', { 
-				text: 'Waiting for file data...', 
-				cls: 'svn-waiting-for-data' // New class for specific state
-			});
-			return;
-		}
-
-		const data = state.data;
-		// Handle different file states based on loaded data
-		if (!data.isWorkingCopy) {
-			this.repositoryHandler.renderRepositorySetup(container, currentFile);
-			return;
-		}
-		if (!data.isFileInSvn) {
-			// Show interactive file state UI in content area since status area only shows status
-			this.fileStateRenderer.renderNotInSvn(container, currentFile);
-			return;
-		}		// Check if file is added but not committed
-		const isAddedNotCommitted = data.status.some((s: any) => s.status === SvnStatusCode.ADDED);
-		if (isAddedNotCommitted) {
-			// Show interactive file state UI in content area since status area only shows status
-			this.fileStateRenderer.renderAddedButNotCommitted(container, currentFile);
-			return;
-		}
-
-		// Render history if we have it
-		if (data.history.length === 0) {
-			container.createEl('p', { 
-				text: 'No history found for this file',
-				cls: 'svn-no-history'
-			});
-			return;
-		}
-
-		this.renderHistoryWithData(container, data, currentFile);
 	}
+
+	/**
+	 * Render history content with state (OLD METHOD - to be replaced or removed)
+	 */
+	/* // Commenting out the old method to ensure the new one is used.
+	renderHistoryContentWithState(container: HTMLElement, state: UIState, currentFile: TFile | null): void {
+		// ... old logic ...
+		// This should be replaced by calls to updateContentAreaDOM
+		info(this, "OLD renderHistoryContentWithState was called. This should be updated.");
+		// Fallback to a simple clear and call to the new method for now
+		container.empty();
+		const newContentType = "unknown_fallback"; // Determine actual content type if possible
+		// const newContentType = this.plugin.svnView?.uiController.stateManager.getContentType(state); // This is a circular dependency risk
+		this.updateContentAreaDOM(container, state, currentFile, newContentType, null, false);
+	}
+	*/
+
 	/**
 	 * Render history data efficiently
 	 */
-	renderHistoryWithData(container: HTMLElement, data: SVNFileData, currentFile: TFile | null): void {
+	renderHistoryWithData(
+		container: HTMLElement, 
+		data: SVNFileData, 
+		currentFile: TFile | null, // Though currentFile should always be non-null if we reach here with 'history' type
+		lastContentType: string | null,
+		historyContentActuallyChanged: boolean 
+	): void {
 		info(this, 'renderHistoryWithData called:', {
 			filePath: currentFile?.path,
 			historyCount: data.history?.length || 0,
-			historyRevisions: data.history?.map(h => ({ revision: h.revision, message: h.message?.substring(0, 30) })) || [],
-			lastUpdateTime: data.lastUpdateTime
+			lastContentType,
+			historyContentActuallyChanged
 		});
 		
-		// Check if we can reuse existing history list
 		let historyList = container.querySelector('.svn-history-list') as HTMLElement;
-		const existingItems = historyList?.querySelectorAll('.svn-history-item') || [];
 		
-		// Only rebuild if history count changed significantly or container is empty
-		const shouldRebuild = !historyList || 
-							 existingItems.length !== data.history.length ||
-							 this.historyStructureChanged(existingItems, data.history);
+		// Determine if a full rebuild of the history list is necessary
+		const needsFullRebuild = !historyList || lastContentType !== 'history' || historyContentActuallyChanged;
 		
-		if (shouldRebuild) {
-			container.empty();
+		if (needsFullRebuild) {
+			info(this, 'Rebuilding history list because:', { 
+				listExists: !!historyList, 
+				lastContentTypeSVC: lastContentType, // SVC for "Subversion" to avoid conflict
+				historyContentActuallyChangedSVC: historyContentActuallyChanged // SVC for "Subversion"
+			});
+			container.empty(); // Clear the container specifically for the history list
 			historyList = container.createEl('ul', { cls: 'svn-history-list' });
 			
-			// Build all history items
 			data.history.forEach((entry, index) => {
 				this.createHistoryItem(historyList, entry, index, data.history, currentFile);
 			});
 		} else {
-			// Reuse existing structure, just update action buttons efficiently
+			// If not rebuilding, we assume the list structure is intact.
+			// We might still need to update individual items if their content can change
+			// without triggering historyContentActuallyChanged (e.g., relative dates, though not used here).
+			// For now, just update action buttons as per existing logic.
+			info(this, 'Updating existing history items (actions only).');
+			const existingItems = historyList.querySelectorAll('.svn-history-item');
 			data.history.forEach((entry, index) => {
 				const historyItem = existingItems[index] as HTMLElement;
 				if (historyItem) {

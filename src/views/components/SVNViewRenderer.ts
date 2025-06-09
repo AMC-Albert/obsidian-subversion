@@ -196,6 +196,7 @@ export class SVNViewRenderer {
 		}
 		
 		// Update status display when data changes
+		// Consider if status display also needs more granular updates to prevent flashing
 		if (dataChanged) {
 			const statusContainer = this.layoutManager.getStatusContainer();
 			await this.statusManager.updateStatusDisplay(state, statusContainer, currentFile);
@@ -203,64 +204,45 @@ export class SVNViewRenderer {
 		
 		// Update content area when file or data changes
 		if (fileChanged || dataChanged) {
+			// This method will now be responsible for more granular updates
 			this.updateContentArea(state, currentFile);
 		}
 	}
+
 	/**
 	 * Update content area section only  
 	 */
 	private updateContentArea(state: UIState, currentFile: TFile | null): void {
 		const contentArea = this.layoutManager.getContentArea();
 		if (!contentArea) return;
-		// Determine content type for intelligent updates
-		const contentType = this.stateManager.getContentType(state);
-		const historyChanged = contentType === 'history' && this.stateManager.hasHistoryChanged(state);
+
+		const newContentType = this.stateManager.getContentType(state);
+		const lastContentType = this.stateManager.getLastContentType();
+		// Ensure hasHistoryChanged is only evaluated if relevant (i.e., newContentType is 'history')
+		const historyActuallyChanged = newContentType === 'history' ? this.stateManager.hasHistoryChanged(state) : false;
 		
-		info(this, 'Content analysis:', {
-			contentType,
-			historyChanged,
+		info(this, 'Content analysis for updateContentArea:', {
+			newContentType,
+			lastContentType,
+			historyActuallyChanged,
 			showLoading: state.showLoading,
 			hasData: !!state.data,
-			historyCount: state.data?.history?.length || 0
+			historyCount: state.data?.history?.length || 0,
+			currentFile: currentFile?.path
 		});
 		
-		// Decide if we need to rebuild the content area
-		let shouldRebuild = false;
+		// Delegate to HistoryManager to handle rendering and clearing decisions
+		this.historyManager.updateContentAreaDOM( // Renamed to avoid conflict if we keep old one temporarily
+			contentArea,
+			state,
+			currentFile,
+			newContentType,
+			lastContentType,
+			historyActuallyChanged 
+		);
 		
-		if (state.showLoading) {
-			// Only show loading if we don't already have content OR if the content type changed
-			const lastContentType = this.stateManager.getLastContentType();
-			if (!lastContentType || lastContentType === 'empty' || lastContentType !== 'loading') {
-				shouldRebuild = true;
-			}
-		} else {
-			// We're not in loading state - this is real content
-			const lastContentType = this.stateManager.getLastContentType();
-			if (lastContentType === 'loading' || lastContentType === 'empty') {
-				// Always rebuild when transitioning from loading/empty to content
-				shouldRebuild = true;
-			} else if (contentType !== lastContentType) {
-				// Content type changed
-				shouldRebuild = true;
-			} else if (contentType === 'history' && historyChanged) {
-				// History content changed
-				shouldRebuild = true;
-			}
-		}
-		
-		// Only rebuild if necessary
-		if (shouldRebuild) {
-			info(this, 'Rebuilding content area:', {
-				contentType,
-				lastContentType: this.stateManager.getLastContentType(),
-				showLoading: state.showLoading,
-				shouldRebuild
-			});
-			this.layoutManager.clearContentArea();
-			this.historyManager.renderHistoryContentWithState(contentArea, state, currentFile);
-		}
-		  // Update content type tracking
-		this.stateManager.setLastContentType(contentType);
+		// Update content type tracking
+		this.stateManager.setLastContentType(newContentType);
 	}	/**
 	 * Show repository setup UI
 	 */
