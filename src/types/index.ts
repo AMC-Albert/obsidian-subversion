@@ -323,6 +323,19 @@ export interface CancellationToken {
     onCancelled: (callback: () => void) => void;
 }
 
+/**
+ * Represents all SVN-related data for a specific file.
+ */
+export interface SvnFileData {
+    filePath: string;
+    isFileInSvn: boolean;
+    isWorkingCopy: boolean;
+    status: SvnStatus[];
+    info: SvnInfo | null;
+    history: SvnLogEntry[];
+    hasLocalChanges: boolean;
+}
+
 
 
 

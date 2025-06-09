@@ -33,7 +33,7 @@ export class SVNViewStateManager {
 			error: state.error,
 			isWorkingCopy: state.data?.isWorkingCopy,
 			isFileInSvn: state.data?.isFileInSvn,
-			revision: state.data?.info?.revision,
+			revision: state.data?.svnInfo?.revision,
 			statusCount: state.data?.status?.length || 0,
 			historyCount: state.data?.history?.length || 0,
 			lastHistoryRevision: state.data?.history?.[0]?.revision
@@ -60,9 +60,9 @@ export class SVNViewStateManager {
 		
 		const statusData = {
 			isWorkingCopy: state.data.isWorkingCopy,
-			revision: state.data.info?.revision,
-			author: state.data.info?.lastChangedAuthor,
-			date: state.data.info?.lastChangedDate,
+			revision: state.data.svnInfo?.revision,
+			author: state.data.svnInfo?.lastChangedAuthor,
+			date: state.data.svnInfo?.lastChangedDate,
 			filePath: currentFilePath,
 			fileStatus: currentFileStatus?.status,
 			fileStatusPath: currentFileStatus?.filePath,
@@ -182,16 +182,35 @@ export class SVNViewStateManager {
 	getContentType(state: UIState): string {
 		if (state.showLoading) return 'loading';
 		if (state.error) return 'error';
-		if (!state.data) return 'no-file';
-		
-		const data = state.data;
-		if (!data.isWorkingCopy) return 'repository-setup';
-		if (!data.isFileInSvn && data.status?.length === 0) return 'not-in-svn';
-		
-		const isAddedNotCommitted = data.status?.some((s: any) => s.status === SvnStatusCode.ADDED);
-		if (isAddedNotCommitted) return 'added-not-committed';
-		
-		if (!data.history || data.history.length === 0) return 'no-history';
+
+		// If state.data is null OR if state.data.file.path (the path of the file this SVNFileData is for)
+		// is null/empty, it implies no specific file context is established.
+		if (!state.data || !state.data.file.path) return 'no-file';
+
+		const fileDataInstance = state.data; // fileDataInstance is of type SVNFileData
+
+		if (!fileDataInstance.isWorkingCopy) return 'repository-setup';
+
+		if (!fileDataInstance.isFileInSvn) {
+			// Check if the status array (fileDataInstance.status) contains an UNVERSIONED status
+			// specifically for the file path this SVNFileData object represents (fileDataInstance.file.path).
+			if (fileDataInstance.status && fileDataInstance.status.some(s => s.status === SvnStatusCode.UNVERSIONED && s.filePath === fileDataInstance.file.path)) {
+				return 'unversioned-file';
+			}
+			return 'not-tracked-file';
+		}
+
+		// File is in SVN (fileDataInstance.isFileInSvn is true)
+		// Check if the file itself (fileDataInstance.file.path) has an ADDED status in its status array.
+		const isAddedNotCommitted = fileDataInstance.status?.some(s => s.status === SvnStatusCode.ADDED && s.filePath === fileDataInstance.file.path);
+		if (isAddedNotCommitted) {
+			return 'added-not-committed';
+		}
+
+		if (!fileDataInstance.history || fileDataInstance.history.length === 0) {
+			return 'no-history';
+		}
+
 		return 'history';
 	}
 

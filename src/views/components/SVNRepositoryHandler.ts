@@ -3,20 +3,19 @@ import { SVNClient } from '../../services/SVNClient';
 import type ObsidianSvnPlugin from '../../main';
 import { CheckoutModal } from '../../modals/CheckoutModal';
 import { join } from 'path';
-import { svnDebug, svnInfo, svnError } from '../../debug';
+import { debug, info, error, registerLoggerClass } from '@/utils/obsidian-logger';
 
 export class SVNRepositoryHandler {
     private plugin: ObsidianSvnPlugin;
     private svnClient: SVNClient;
     private onRefresh: () => void;
-    private onUserInteraction?: () => void;
-
-    constructor(plugin: ObsidianSvnPlugin, svnClient: SVNClient, onRefresh: () => void, onUserInteraction?: () => void) {
+    private onUserInteraction?: () => void;    constructor(plugin: ObsidianSvnPlugin, svnClient: SVNClient, onRefresh: () => void, onUserInteraction?: () => void) {
         this.plugin = plugin;
         this.svnClient = svnClient;
         this.onRefresh = onRefresh;
         this.onUserInteraction = onUserInteraction;
-    }    async validateRepository(): Promise<{ isValid: boolean; repoPath?: string; error?: string }> {
+        registerLoggerClass(this, 'SVNRepositoryHandler');
+    }async validateRepository(): Promise<{ isValid: boolean; repoPath?: string; error?: string }> {
         try {
             const settings = this.plugin.settings;
             //debug(this, validateRepository - full settings:', settings);

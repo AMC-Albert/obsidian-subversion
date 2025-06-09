@@ -174,14 +174,14 @@ export default class ObsidianSvnPlugin extends Plugin {
 		
 		// Don't automatically refresh views here - let user manually refresh if needed
 		// Automatic refresh on every settings keystroke creates race conditions
-		debug(this, 'onSvnClientUpdate', 'SVN client updated, views will refresh on next user action');
+		debug(this, 'SVN client updated, views will refresh on next user action');
 	}
 
 	/**
 	 * Notify views that settings have changed
 	 */
 	private notifyViewsOfSettingsChange() {
-		debug(this, 'notifyViewsOfSettingsChange', 'Notifying views of settings change');
+		debug(this, 'Notifying views of settings change');
 		let notifiedCount = 0;
 		this.app.workspace.iterateAllLeaves(leaf => {
 			if (leaf.view instanceof FileHistoryView) {
@@ -192,7 +192,7 @@ export default class ObsidianSvnPlugin extends Plugin {
 				}
 			}
 		});
-		info(this, 'notifyViewsOfSettingsChange', `Notified ${notifiedCount} file history views of settings change`);
+		info(this, `Notified ${notifiedCount} file history views of settings change`);
 	}
 
 	/**
@@ -202,11 +202,15 @@ export default class ObsidianSvnPlugin extends Plugin {
 		// Update status when switching files (with smart refresh)
 		this.registerEvent(
 			this.app.workspace.on('active-leaf-change', () => {
-				// Only refresh if the active file has actually changed
 				const activeFile = this.app.workspace.getActiveFile();
-				if (activeFile && this.lastActiveFile !== activeFile?.path) {
-					this.lastActiveFile = activeFile.path;
-					this.refreshFileHistoryViews();
+				const newActiveFilePath = activeFile?.path ?? null;
+
+				if (this.lastActiveFile !== newActiveFilePath) {
+					info(this, `Observed active file change in main.ts. Old: ${this.lastActiveFile}, New: ${newActiveFilePath}. SVNView instances handle their own updates.`);
+					this.lastActiveFile = newActiveFilePath;
+					// No call to this.refreshFileHistoryViews() here.
+					// SVNView's internal 'active-leaf-change' listener calls its 'updateCurrentFile()',
+					// which uses 'uiController.setCurrentFile()', which is cache-aware.
 				}
 			})
 		);
@@ -298,11 +302,10 @@ export default class ObsidianSvnPlugin extends Plugin {
 	refreshFileHistoryViews() {
 		const now = Date.now();
 		if (now - this.lastRefreshTime < ObsidianSvnPlugin.REFRESH_THROTTLE_MS) {
-			debug(this, 'refreshFileHistoryViews', `Throttling refreshFileHistoryViews - last refresh ${now - this.lastRefreshTime}ms ago`);
+			debug(this, `Throttling refreshFileHistoryViews - last refresh ${now - this.lastRefreshTime}ms ago`);
 			return;
 		}
 		
-		debug(this, 'refreshFileHistoryViews', 'refreshFileHistoryViews called');
 		this.lastRefreshTime = now;
 		
 		let refreshedCount = 0;
@@ -312,7 +315,7 @@ export default class ObsidianSvnPlugin extends Plugin {
 				refreshedCount++;
 			}
 		});
-		debug(this, 'refreshFileHistoryViews', `Refreshed ${refreshedCount} file history views`);
+		debug(this, `Refreshed ${refreshedCount} file history views`);
 	}
 
 	/**
@@ -322,12 +325,12 @@ export default class ObsidianSvnPlugin extends Plugin {
 		let refreshedCount = 0;
 		this.app.workspace.iterateAllLeaves(leaf => {
 			if (leaf.view instanceof FileHistoryView) {
-				// Use refreshData instead of refreshStatus to ensure history is reloaded
-				leaf.view.refreshData();
+				// Use refreshFromCache to leverage SVNDataStore's caching
+				(leaf.view as any).refreshFromCache(); 
 				refreshedCount++;
 			}
 		});
-		debug(this, 'refreshDataInViews', `Refreshed data in ${refreshedCount} file history views`);
+		debug(this, `Requested cache-aware refresh in ${refreshedCount} file history views`);
 	}
 	/**
 	 * Cleanup resources on plugin unload
@@ -337,8 +340,8 @@ export default class ObsidianSvnPlugin extends Plugin {
 			clearTimeout(this.statusUpdateTimer);
 			this.statusUpdateTimer = null;
 		}
-				// Cleanup debug logging
-		debug(this, 'cleanup', 'Plugin cleanup completed');
+		// Cleanup debug logging
+		debug(this, 'Plugin cleanup completed');
 	}
 }
 

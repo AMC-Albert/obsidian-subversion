@@ -56,6 +56,10 @@ export function registerCommands(plugin: ObsidianSvnPlugin) {
 							editor.setValue(content);
 						});
 				}
+				// Refresh file history views to show the reverted state
+				setTimeout(() => {
+					plugin.refreshFileHistoryViews();
+				}, 500); // Delay to allow Obsidian to process file change
 			} catch (error) {
 				error(this, 'SVN revert error:', error);
 				new Notice(`Error: ${error.message}`);
@@ -198,6 +202,10 @@ export function registerCommands(plugin: ObsidianSvnPlugin) {
 				
 				await execPromise(`${plugin.settings.svnBinaryPath} add "${filePath}"`);
 				new Notice('File added to SVN');
+				// Refresh file history views to show the new status
+				setTimeout(() => {
+					plugin.refreshFileHistoryViews();
+				}, 500);
 			} catch (error) {
 				error(this, 'SVN add file error:', error);
 				new Notice(`Error: ${error.message}`);

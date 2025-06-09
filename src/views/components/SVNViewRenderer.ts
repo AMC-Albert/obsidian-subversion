@@ -43,6 +43,8 @@ export class SVNViewRenderer {
 	
 	// State handling protection
 	private isHandlingStateChange: boolean = false;
+	private pendingState: UIState | null = null;
+	private pendingFile: TFile | null = null;
 
 	constructor(
 		plugin: ObsidianSvnPlugin,
@@ -88,66 +90,96 @@ export class SVNViewRenderer {
 		this.layoutManager.initializeLayout();
 		this.layoutManager.setupInfoPanel(this.infoPanel, this.fileActions);
 	}	/**
-	 * Handle UI state changes intelligently
+	 * Handle UI state changes intelligently, processing the latest available state.
 	 */
 	async handleUIStateChange(state: UIState, currentFile: TFile | null): Promise<void> {
-		// Prevent overlapping state change handlers
+		debug(this, 'handleUIStateChange invoked for file:', currentFile?.path ?? 'none', 'Current isHandling:', this.isHandlingStateChange);
+		this.pendingState = state;
+		this.pendingFile = currentFile;
+
 		if (this.isHandlingStateChange) {
-			debug(this, 'Already handling state change, skipping duplicate');
+			debug(this, 'Renderer busy, new state queued for file:', currentFile?.path ?? 'none');
 			return;
 		}
-		
-		this.isHandlingStateChange = true;
-		
-		try {
-			// Check if we're in a user interaction protection window
-			if (this.stateManager.isInUserInteractionWindow()) {
-				info(this, 'Skipping UI update - user interaction in progress');
-				return;
-			}
 
-			// Skip rendering if we're currently showing repository setup
-			if (this.isShowingRepositorySetup()) {
-				info(this, 'Skipping UI update - repository setup is active');
-				return;
-			}
-			  // Override state data status with recent direct status if within protection window
-			if (this.stateManager.isWithinProtectionWindow() && state.data) {
-				const directData = this.stateManager.getLastDirectStatusData();
-				if (directData) {
-					state.data.status = directData.status as any;
-					state.data.hasLocalChanges = directData.status.some((s: any) => 
-						s.status === SvnStatusCode.MODIFIED || 
-						s.status === SvnStatusCode.ADDED || 
-						s.status === SvnStatusCode.DELETED
-					);
+		this.isHandlingStateChange = true;
+		debug(this, 'Renderer started processing.');
+
+		try {
+			while (this.pendingState) {
+				const stateToProcess = this.pendingState;
+				const fileToProcess = this.pendingFile;
+				
+				// Clear pending state *before* processing this iteration's state
+				this.pendingState = null;
+				this.pendingFile = null;
+
+				debug(this, 'Processing state for file:', fileToProcess?.path ?? 'none', { hasData: !!stateToProcess.data, isLoading: stateToProcess.isLoading, showLoading: stateToProcess.showLoading });
+
+				// Check for user interaction or repository setup
+				if (this.stateManager.isInUserInteractionWindow()) {
+					info(this, 'Skipping UI update (user interaction) for file:', fileToProcess?.path ?? 'none');
+					continue; // Skip this state, check for newer pending state in the next loop iteration
+				}
+				if (this.isShowingRepositorySetup()) {
+					info(this, 'Skipping UI update (repository setup active) for file:', fileToProcess?.path ?? 'none');
+					continue; // Skip this state, check for newer pending state
+				}
+
+				// Override state data status with recent direct status if within protection window
+				if (this.stateManager.isWithinProtectionWindow() && stateToProcess.data) {
+					const directData = this.stateManager.getLastDirectStatusData();
+					if (directData && directData.status) { // Ensure directData and its status exist
+						stateToProcess.data.status = directData.status;
+						stateToProcess.data.hasLocalChanges = directData.status.some((s: any) => 
+							s.status === SvnStatusCode.MODIFIED || 
+							s.status === SvnStatusCode.ADDED || 
+							s.status === SvnStatusCode.DELETED
+						);
+					}
+				}
+				
+				// If we have fresh direct status data, render override and skip state-driven UI updates
+				if (this.stateManager.isWithinProtectionWindow()) {
+					const statusContainer = this.layoutManager.getStatusContainer();
+					if (statusContainer && this.stateManager.getLastDirectStatusData()) {
+						await this.statusManager.updateStatusDisplay(stateToProcess, statusContainer, fileToProcess);
+						debug(this, 'Direct status update rendered for file:', fileToProcess?.path ?? 'none');
+						continue; // Skip further processing for this state, check for newer pending state
+					}
+				}
+				
+				// Calculate state hash for intelligent updates
+				const currentDataHash = this.stateManager.calculateStateHash(stateToProcess);
+				const currentFileId = fileToProcess?.path || null;
+				
+				const fileChanged = currentFileId !== this.stateManager.getLastFileId();
+				const dataChanged = currentDataHash !== this.stateManager.getLastDataHash();
+				
+				if (fileChanged || dataChanged) {
+					debug(this, 'File or data changed, updating view intelligently for file:', fileToProcess?.path ?? 'none', { fileChanged, dataChanged });
+					await this.updateViewIntelligently(stateToProcess, fileChanged, dataChanged, fileToProcess);
+					this.stateManager.setLastDataHash(currentDataHash);
+					this.stateManager.setLastFileId(currentFileId);
+				} else {
+					debug(this, 'No significant file or data change, skipping full view update for file:', fileToProcess?.path ?? 'none');
 				}
 			}
-			
-			// If we have fresh direct status data, render override and skip state-driven UI updates
-			if (this.stateManager.isWithinProtectionWindow()) {
-				const statusContainer = this.layoutManager.getStatusContainer();
-				if (statusContainer && this.stateManager.getLastDirectStatusData()) {
-					await this.statusManager.updateStatusDisplay(state, statusContainer, currentFile);
-					return;
-				}
-			}
-			
-			// Calculate state hash for intelligent updates
-			const currentDataHash = this.stateManager.calculateStateHash(state);
-			const currentFileId = currentFile?.path || null;
-			
-			// Only update if file changed or data significantly changed
-			const fileChanged = currentFileId !== this.stateManager.getLastFileId();
-			const dataChanged = currentDataHash !== this.stateManager.getLastDataHash();
-			
-			if (fileChanged || dataChanged) {
-				await this.updateViewIntelligently(state, fileChanged, dataChanged, currentFile);
-				this.stateManager.setLastDataHash(currentDataHash);
-				this.stateManager.setLastFileId(currentFileId);
-			}
+		} catch (err) {
+			error(this, 'Error during handleUIStateChange processing loop:', err);
 		} finally {
 			this.isHandlingStateChange = false;
+			debug(this, 'Renderer finished processing. Pending state available:', !!this.pendingState);
+
+			// If a new state came in and was stored in this.pendingState *after* the while condition
+			// was last checked (e.g., during an await in the loop's last iteration, or if loop didn't run due to initial pendingState being null),
+			// and the loop has exited, we need to re-trigger processing for this new state.
+			if (this.pendingState) {
+				debug(this, 'Re-triggering handleUIStateChange for pending state after loop completion for file:', this.pendingFile?.path ?? 'none');
+				// Use a microtask to avoid deep recursion and allow current stack to unwind.
+				// Pass the currently stored pendingState and pendingFile.
+				Promise.resolve().then(() => this.handleUIStateChange(this.pendingState!, this.pendingFile)).catch(e => error(this, "Error in re-triggered handleUIStateChange", e));
+			}
 		}
 	}
 

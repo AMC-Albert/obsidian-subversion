@@ -237,10 +237,9 @@ export class SVNView extends ItemView {
 	 */
 	onSettingsChanged(): void {
 		info(this, 'Settings changed, refreshing view');
-		// Only refresh if we're showing the repository setup (not if showing normal content)
-		if (!this.currentFile || this.isShowingRepositorySetup()) {
-			this.refreshView();
-		}
+		// Always refresh the view when settings change to ensure all configurations are applied.
+		// refreshView() ultimately calls uiController.refreshCurrentFile(), which bypasses the cache.
+		this.refreshView();
 	}
 	
 	/**
@@ -289,6 +288,17 @@ export class SVNView extends ItemView {
 	async refreshStatus(): Promise<void> {
 		info(this, 'refreshStatus called');
 		await this.viewRenderer.refreshStatus(this.currentFile);
+	}
+
+	/**
+	 * Refresh the view using cached data via SVNDataStore.
+	 * This is intended for background updates or light refreshes.
+	 */
+	async refreshFromCache(): Promise<void> {
+		info(this, 'refreshFromCache called');
+		// Re-triggering setCurrentFile will use the SVNDataStore, which respects the cache.
+		// If the current file is null, it will effectively clear or set to a default state.
+		await this.uiController.setCurrentFile(this.currentFile);
 	}
 
 	// === REVISION TRACKING METHODS ===

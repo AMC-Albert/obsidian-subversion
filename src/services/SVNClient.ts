@@ -13,6 +13,8 @@ export class SVNClient {
 	private svnPath: string;
 	private vaultPath: string;
 	private statusRequestCache = new Map<string, Promise<SvnStatus[]>>();
+	private findWorkingCopyCache = new Map<string, string | null>();
+	private isFileInSvnResultCache = new Map<string, boolean>();
 	
 	// Callback for notifying when cache should be cleared
 	private cacheInvalidationCallback?: () => void;
@@ -46,6 +48,11 @@ export class SVNClient {
 		}
 		return join(this.vaultPath, filePath);
 	}	private findSvnWorkingCopy(absolutePath: string): string | null {
+		// Check cache first
+		if (this.findWorkingCopyCache.has(absolutePath)) {
+			return this.findWorkingCopyCache.get(absolutePath)!;
+		}
+
 		// Start from the path itself, then check parent directories
 		let currentPath = absolutePath;
 		debug(this, 'findWorkingCopyRoot', `Looking for SVN working copy starting from: ${currentPath}`);
@@ -56,17 +63,25 @@ export class SVNClient {
 			debug(this, `Path is a file, starting from directory: ${currentPath}`);
 		}
 		
-		while (currentPath && currentPath !== dirname(currentPath)) {
-			const svnPath = join(currentPath, '.svn');			debug(this, `Checking for .svn directory at: ${svnPath}`);
+		let result: string | null = null;
+		let searchPath = currentPath;
+		while (searchPath && searchPath !== dirname(searchPath)) {
+			const svnPath = join(searchPath, '.svn');
+			debug(this, `Checking for .svn directory at: ${svnPath}`);
 			if (existsSync(svnPath)) {
-				logInfo(this, 'findSvnWorkingCopy', `Found SVN working copy at: ${currentPath}`);
-				return currentPath;
+				logInfo(this, 'findSvnWorkingCopy', `Found SVN working copy at: ${searchPath}`);
+				result = searchPath;
+				break;
 			}
-			currentPath = dirname(currentPath);
+			searchPath = dirname(searchPath);
 		}
 		
-		error(this, `No SVN working copy found starting from: ${absolutePath}`);
-		return null;
+		if (!result) {
+			error(this, `No SVN working copy found starting from: ${absolutePath}`);
+		}
+
+		this.findWorkingCopyCache.set(absolutePath, result);
+		return result;
 	}
 
 	async getFileHistory(filePath: string): Promise<SvnLogEntry[]> {
@@ -332,7 +347,7 @@ export class SVNClient {
 			// Ensure the file itself is added to SVN
 			await this.ensureFileIsAdded(fullPath);
 
-			const command = `svn commit -m "${message}" "${fullPath}"`;
+			const command = `svn commit -m \"${message}\" \"${fullPath}\"`;
 			logInfo(this, 'Executing command:', { command });
 			const { stdout, stderr } = await execPromise(command);
 
@@ -678,30 +693,39 @@ export class SVNClient {
 		}
 	}
 		async isFileInSvn(filePath: string): Promise<boolean> {
+		const absolutePath = this.resolveAbsolutePath(filePath);
+
+		// Check cache first
+		if (this.isFileInSvnResultCache.has(absolutePath)) {
+			return this.isFileInSvnResultCache.get(absolutePath)!;
+		}
+
 		try {
-			const absolutePath = this.resolveAbsolutePath(filePath);
 			const workingCopyRoot = this.findSvnWorkingCopy(absolutePath);
 			
 			if (!workingCopyRoot) {
-				logInfo(this, 'logInfo', filePath);
+				logInfo(this, 'logInfo', `isFileInSvn: No working copy for ${filePath}`);
+				this.isFileInSvnResultCache.set(absolutePath, false);
 				return false;
 			}
 
 			// Use svn info directly to definitively check if file is tracked by SVN
-			// This avoids cache coherency issues and provides the most accurate result
 			try {
 				const infoCommand = `${this.svnPath} info "${absolutePath}"`;
 				await execPromise(infoCommand, { cwd: workingCopyRoot });
 				// If svn info succeeds, file is definitely versioned
-				logInfo(this, 'logInfo', filePath);
+				logInfo(this, 'logInfo', `isFileInSvn: ${filePath} is in SVN`);
+				this.isFileInSvnResultCache.set(absolutePath, true);
 				return true;
 			} catch (infoError) {
 				// If svn info fails, file is not versioned
-				logInfo(this, 'logInfo', filePath, infoError.message);
+				logInfo(this, 'logInfo', `isFileInSvn: ${filePath} not in SVN (info error): ${infoError.message}`);
+				this.isFileInSvnResultCache.set(absolutePath, false);
 				return false;
 			}
 		} catch (error) {
 			logInfo(this, 'isFileInSvn: Error occurred:', { filePath, error: error.message });
+			this.isFileInSvnResultCache.set(absolutePath, false);
 			return false;
 		}
 	}
@@ -1105,12 +1129,11 @@ export class SVNClient {
 	 * Clear the status request cache to ensure fresh data after SVN operations
 	 */
 	private clearStatusCache(): void {
-		logInfo(this, 'logInfo', `Clearing status request cache`);
+		logInfo(this, 'logInfo', 'Clearing SVNClient status-related caches');
 		this.statusRequestCache.clear();
-		
-		// Notify DataStore to clear its cache as well
+		this.findWorkingCopyCache.clear();
+		this.isFileInSvnResultCache.clear();
 		if (this.cacheInvalidationCallback) {
-			logInfo(this, 'logInfo', `Notifying DataStore to clear cache`);
 			this.cacheInvalidationCallback();
 		}
 	}

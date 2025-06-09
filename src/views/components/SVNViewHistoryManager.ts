@@ -52,10 +52,24 @@ export class SVNViewHistoryManager {
 			return;
 		}
 
-		if (!state.data || !currentFile) {
+		// If there's no current file selected in the Obsidian view itself
+		if (!currentFile) {
 			container.createEl('p', { 
-				text: 'No file selected',
-				cls: 'svn-no-file'
+				text: 'No file selected or file is not active.', // More descriptive
+				cls: 'svn-no-file' // Existing class
+			});
+			return;
+		}
+        
+        // If a file is selected, but we don't have its SVN data yet (and not in loading/error state)
+		if (!state.data) { 
+			// This state implies currentFile is set, but SVNDataStore hasn't returned data yet,
+			// and it's not an error, and not explicitly loading.
+			// This can happen if SVNUIController initializes with currentFile but data is pending,
+			// and the initial render happens before showLoading is true or data arrives.
+			container.createEl('p', { 
+				text: 'Waiting for file data...', 
+				cls: 'svn-waiting-for-data' // New class for specific state
 			});
 			return;
 		}

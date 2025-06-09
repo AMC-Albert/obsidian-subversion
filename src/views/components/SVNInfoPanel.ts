@@ -2,16 +2,16 @@ import { TFile } from 'obsidian';
 import { join } from 'path';
 import { SVNClient } from '../../services/SVNClient';
 import type ObsidianSvnPlugin from '../../main';
-import { svnDebug, svnInfo, svnError } from '../../debug';
+import { debug, info, error, registerLoggerClass } from '@/utils/obsidian-logger';
 
 export class SVNInfoPanel {
 	private plugin: ObsidianSvnPlugin;
 	private svnClient: SVNClient;
 	private panelElement: HTMLElement | null = null;
-
 	constructor(plugin: ObsidianSvnPlugin, svnClient: SVNClient) {
 		this.plugin = plugin;
 		this.svnClient = svnClient;
+		registerLoggerClass(this, 'SVNInfoPanel');
 	}
 
 	setPanelElement(element: HTMLElement): void {
@@ -70,12 +70,10 @@ export class SVNInfoPanel {
 					cls: 'svn-info-section-header'
 				});
 				
-				const infoList = this.panelElement.createEl('ul', { cls: 'svn-info-list' });
-
-				if (info.lastChangedRev) {
+				const infoList = this.panelElement.createEl('ul', { cls: 'svn-info-list' });				if (info.lastChangedRev) {
 					const item = infoList.createEl('li', { cls: 'svn-info-item' });
 					item.createEl('strong', { text: 'Last Changed Rev: ' });
-					item.createSpan({ text: info.lastChangedRev });
+					item.createSpan({ text: String(info.lastChangedRev) });
 				}
 				
 				if (info.lastChangedAuthor) {
