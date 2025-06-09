@@ -3,18 +3,25 @@ import { ButtonComponent } from 'obsidian';
 import { SVNClient } from '../../services/SVNClient';
 import { DiffModal } from '../../modals/DiffModal';
 import { SvnLogEntry, SvnStatusCode } from '@/types';
-import { loggerDebug, loggerInfo, loggerError, registerLoggerClass } from '@/utils/obsidian-logger';
+import { loggerDebug, loggerInfo, loggerError, loggerWarn, registerLoggerClass } from '@/utils/obsidian-logger';
 
 export class SVNHistoryRenderer {
 	private svnClient: SVNClient;
 	private plugin: any;
 	private refreshCallback: () => void;
+	private currentFilePathForPreviews: string | null = null;
+
 	constructor(svnClient: SVNClient, plugin: any, refreshCallback: () => void) {
 		this.svnClient = svnClient;
 		this.plugin = plugin;
 		this.refreshCallback = refreshCallback;
 		registerLoggerClass(this, 'SVNHistoryRenderer');
 	}
+
+	public setCurrentFileForPreviews(filePath: string | null): void {
+		this.currentFilePathForPreviews = filePath;
+	}
+
 	/**
 	 * Add action buttons for a history item (used by data bus system)
 	 */
@@ -31,7 +38,58 @@ export class SVNHistoryRenderer {
 				this.showDiff(filePath, history[index - 1].revision, entry.revision);
 			});
 		}
+
+		// Add preview image if available
+		if (entry.previewImagePath && this.currentFilePathForPreviews) {
+			const imgEl = actionsEl.createEl('img', { cls: 'svn-history-preview-thumbnail' });
+			imgEl.style.maxWidth = '32px'; // Or some other appropriate size
+			imgEl.style.maxHeight = '32px';
+			imgEl.style.marginLeft = '5px';
+			imgEl.alt = `Preview for r${entry.revision}`;
+			imgEl.title = `Click to view larger preview for revision ${entry.revision}`;			// Asynchronously load and set the image source
+			this.svnClient.getLocalPreviewImage(
+				this.currentFilePathForPreviews, // The working path of the main file (e.g., .blend file)
+				entry.previewImagePath,       // Repo-relative path of the preview image
+				entry.revision.toString()     // Revision number
+			).then(localPath => {
+				if (localPath) {
+					// Convert absolute path to vault-relative path for Obsidian
+					let vaultRelativePath = localPath;
+					if (this.plugin.app.vault.adapter.basePath) {
+						const basePath = this.plugin.app.vault.adapter.basePath;
+						if (localPath.startsWith(basePath)) {
+							vaultRelativePath = localPath.substring(basePath.length + 1).replace(/\\/g, '/');
+						}
+					}
+					
+					// Obsidian specific way to get a usable URL for local plugin files
+					const imgSrc = this.plugin.app.vault.adapter.getResourcePath(vaultRelativePath);
+					loggerDebug(this, 'Preview image paths:', {
+						localPath,
+						basePath: this.plugin.app.vault.adapter.basePath,
+						vaultRelativePath,
+						imgSrc
+					});
+					
+					imgEl.src = imgSrc;
+					
+					// Add click handler for larger view
+					imgEl.addEventListener('click', (evt) => {
+						evt.preventDefault();
+						evt.stopPropagation();
+						this.showPreviewModal(imgSrc, entry.revision);
+					});
+				} else {
+					imgEl.style.display = 'none'; // Hide if not found or error
+					loggerWarn(this, `Could not load local preview for r${entry.revision}, path: ${entry.previewImagePath}`);
+				}
+			}).catch(err => {
+				imgEl.style.display = 'none';
+				loggerError(this, `Error loading preview image for r${entry.revision}:`, err);
+			});
+		}
 	}
+
 	private showDiff(filePath: string, fromRevision: number, toRevision: number): void {
 		// Use getDiff method from SVNClient - it accepts an optional revision parameter
 		this.svnClient.getDiff(filePath, toRevision.toString()).then((diffContent: string) => {
@@ -138,6 +196,33 @@ export class SVNHistoryRenderer {
 			loggerError(this, 'Could not force file reload:', error);
 			// Continue anyway - the SVN view will still be updated
 		}
+	}
+
+	/**
+	 * Show a modal with a larger preview image
+	 */
+	private showPreviewModal(imageSrc: string, revision: number): void {
+		const { Modal } = require('obsidian');
+		const modal = new Modal(this.plugin.app);
+		modal.titleEl.textContent = `Preview for Revision ${revision}`;
+		
+		modal.onOpen = () => {
+			const { contentEl } = modal;
+			contentEl.addClass('svn-preview-modal');
+			
+			const imgContainer = contentEl.createDiv({ cls: 'svn-preview-container' });
+			imgContainer.style.textAlign = 'center';
+			imgContainer.style.padding = '20px';
+			
+			const img = imgContainer.createEl('img');
+			img.src = imageSrc;
+			img.style.maxWidth = '90vw';
+			img.style.maxHeight = '90vh';
+			img.style.objectFit = 'contain';
+			img.alt = `Full preview for revision ${revision}`;
+		};
+		
+		modal.open();
 	}
 }
 

@@ -41,6 +41,8 @@ export class SVNView extends ItemView {
 	
 	// Simple state tracking
 	private isInitialized = false;
+	// Track if we are in repository setup mode to prevent UI state overrides
+	private isSetupMode = false;
 	constructor(leaf: WorkspaceLeaf, plugin: ObsidianSvnPlugin) {
 		super(leaf);
 		this.plugin = plugin;
@@ -51,7 +53,7 @@ export class SVNView extends ItemView {
 		this.uiController = new SVNUIController(plugin, this.svnClient);
 		// Initialize all component instances first
 		this.fileActions = new SVNFileActions(plugin, this.svnClient, () => this.refreshData());
-		this.toolbar = new SVNToolbar(plugin, this.svnClient, this.fileActions, () => this.refreshData(), () => this.toggleRepositorySetup());
+		this.toolbar = new SVNToolbar(plugin, this.svnClient, this.fileActions, () => this.refreshData(), () => this.toggleRepositorySetup(), () => this.togglePin());
 		this.statusDisplay = new SVNStatusDisplay(this.svnClient);
 		this.historyRenderer = new SVNHistoryRenderer(this.svnClient, plugin, () => this.refreshData());
 		this.infoPanel = new SVNInfoPanel(plugin, this.svnClient);
@@ -82,7 +84,8 @@ export class SVNView extends ItemView {
 		
 		// Subscribe to UI state changes
 		this.unsubscribeUI = this.uiController.subscribeToUI((state) => {
-			this.handleUIStateChange(state);
+			// Pass the plugin instance to handleUIStateChange
+			this.handleUIStateChange(state, this.plugin); 
 		});
 		
 		// Listen for active file changes
@@ -106,8 +109,10 @@ export class SVNView extends ItemView {
 		// Dispose UI controller
 		this.uiController.dispose();
 		
-		// Reset state tracking in view renderer
-		this.viewRenderer.resetStateTracking();
+		// Call resetStateTracking on stateManager, not viewRenderer
+		if (this.viewRenderer) { // Check if viewRenderer is initialized
+			this.viewRenderer.getStateManager().resetStateTracking(); 
+		}
 		
 		this.isInitialized = false;
 	}
@@ -144,13 +149,15 @@ export class SVNView extends ItemView {
 		const activeFile = this.app.workspace.getActiveFile();
 		if (activeFile !== this.currentFile) {
 			this.currentFile = activeFile;
+			// Set the current file for preview functionality
+			this.historyRenderer.setCurrentFileForPreviews(activeFile?.path || null);
 			await this.uiController.setCurrentFile(activeFile);
 		}
 	}
 	/**
 	 * Handle UI state changes - delegate to main renderer
 	 */
-	private async handleUIStateChange(state: UIState): Promise<void> {
+	private async handleUIStateChange(state: UIState, plugin: ObsidianSvnPlugin): Promise<void> {
 		loggerInfo(this, 'handleUIStateChange called:', {
 			showLoading: state.showLoading,
 			hasData: !!state.data,
@@ -159,14 +166,20 @@ export class SVNView extends ItemView {
 			currentFile: this.currentFile?.path
 		});
 		
+		// If in repository setup mode, skip state-driven UI changes
+		if (this.isSetupMode) {
+			loggerInfo(this, 'In setup mode, skipping state change');
+			return;
+		}
 		// Prevent overlapping state change handlers
-		if (!this.isInitialized) {
+		if (!this.isInitialized || !this.viewRenderer) { // Added !this.viewRenderer check
 			loggerInfo(this, 'View not initialized, skipping state change');
 			return;
 		}
 		
-		// Let the main renderer handle all UI updates first
-		await this.viewRenderer.handleUIStateChange(state, this.currentFile);
+		// Pass the plugin instance to viewRenderer.handleUIStateChange
+		await this.viewRenderer.handleUIStateChange(state, this.currentFile, plugin); 
+
 				// Check if we're showing repository setup after rendering
 		const isShowingSetup = this.isShowingRepositorySetup();
 		loggerInfo(this, 'Setup mode detected:', isShowingSetup);
@@ -186,17 +199,45 @@ export class SVNView extends ItemView {
 		const isCurrentlyShowingSetup = this.isShowingRepositorySetup();
 		
 		if (isCurrentlyShowingSetup) {
-			// Go back to normal view - first clear and prepare
+			// Go back to normal view by restoring cached history DOM
 			this.viewRenderer.showNormalView(this.currentFile);
 			this.toolbar.setButtonActive('settings', false);
-			// Force a complete refresh to populate the normal view
-			await this.uiController.refreshCurrentFile();
+			this.isSetupMode = false;
+			// Update status display and toolbar states without fetching new SVN data
+			const currentState = this.uiController.getCurrentState();
+			// Update status area
+			await this.viewRenderer.getStatusManager().updateStatusDisplay(
+				currentState,
+				this.viewRenderer.getLayoutManager().getStatusContainer(),
+				this.currentFile
+			);
+			// Refresh toolbar button states for current file
+			await this.toolbar.updateButtonStates(this.currentFile);
 		} else {
-			// Show repository setup
-			this.showRepositorySetup();
+			// Show repository setup - this is a UI-only change initially
+			this.showRepositorySetup(); // This calls viewRenderer.showRepositorySetup, which handles rendering and content type
 			this.toolbar.setButtonActive('settings', true);
+			this.isSetupMode = true;
+			// No uiController.triggerUIRefresh() here, as showRepositorySetup handles the immediate UI change.
+			// The next data-driven update will correctly transition from the SETUP content type.
 		}
+	}	/**
+	 * Toggle pin checked out revision functionality
+	 */
+	async togglePin(): Promise<void> {
+		// Toggle the setting
+		this.plugin.settings.pinCheckedOutRevision = !this.plugin.settings.pinCheckedOutRevision;
+		
+		// Save the setting directly without triggering the general settings change notification
+		await this.plugin.saveData(this.plugin.settings);
+		
+		// Update toolbar state
+		this.toolbar.updateFromSettings();
+		
+		// Trigger UI refresh without refetching data (pin toggle only changes presentation)
+		this.uiController.triggerUIRefresh();
 	}
+
 	/**
 	 * Show repository setup and update toolbar state
 	 */
@@ -246,7 +287,9 @@ export class SVNView extends ItemView {
 	 * Check if currently showing repository setup
 	 */
 	private isShowingRepositorySetup(): boolean {
-		const contentArea = this.viewRenderer.getLayoutManager().getContentArea();
+		if (!this.viewRenderer) return false; // Guard against uninitialized viewRenderer
+		// Access layoutManager via viewRenderer
+		const contentArea = this.viewRenderer.getLayoutManager().getContentArea(); 
 		if (!contentArea) return false;
 		
 		// Check for repository setup indicators
@@ -287,7 +330,9 @@ export class SVNView extends ItemView {
 	 */
 	async refreshStatus(): Promise<void> {
 		loggerInfo(this, 'refreshStatus called');
-		await this.viewRenderer.refreshStatus(this.currentFile);
+		if (!this.viewRenderer) return; // Guard
+		// Call refreshStatus on statusManager via viewRenderer
+		await this.viewRenderer.getStatusManager().updateStatusDisplay(this.uiController.getCurrentState(), this.viewRenderer.getLayoutManager().getStatusContainer(), this.currentFile);
 	}
 
 	/**
@@ -329,6 +374,7 @@ export class SVNView extends ItemView {
 	 */
 	private markUserInteraction(): void {
 		loggerInfo(this, 'markUserInteraction called - activating protection');
+		if (!this.viewRenderer) return; // Guard
 		this.viewRenderer.getStateManager().startUserInteraction();
 	}
 }

@@ -1,6 +1,6 @@
 import { TFile } from 'obsidian';
 import { SVNClient } from '@/services';
-import { SvnStatusCode } from '@/types';
+import { SvnStatusCode } from '@/types'; // Assuming SvnStatusCode is used, keep if so
 import { UIState } from '../SVNUIController';
 import { 
 	SVNToolbar, 
@@ -13,10 +13,19 @@ import {
 } from '.';
 import { SVNViewStateManager } from './SVNViewStateManager';
 import { SVNViewLayoutManager } from './SVNViewLayoutManager';
-import { SVNViewStatusManager } from './SVNViewStatusManager';
+import { SVNViewStatusManager } from './SVNViewStatusManager'; // Assuming this is where updateStatusDisplay might be
 import { SVNViewHistoryManager } from './SVNViewHistoryManager';
 import type ObsidianSvnPlugin from '../../main';
 import { loggerDebug, loggerInfo, loggerError, registerLoggerClass } from '@/utils/obsidian-logger';
+import { PLUGIN_CONSTANTS } from '@/core'; // Keep this
+import { CONTENT_TYPES } from '@/core/contentTypes'; // Corrected import path
+
+// Define a type for the pending state
+interface PendingStateArgs {
+    state: UIState;
+    currentFile: TFile | null;
+    plugin: ObsidianSvnPlugin;
+}
 
 /**
  * Main renderer component that coordinates all rendering logic for the FileHistoryView
@@ -43,8 +52,14 @@ export class SVNViewRenderer {
 	
 	// State handling protection
 	private isHandlingStateChange: boolean = false;
-	private pendingState: UIState | null = null;
-	private pendingFile: TFile | null = null;
+	// Use the new PendingStateArgs type
+	private pendingStateArgs: PendingStateArgs | null = null; 
+	// private pendingFile: TFile | null = null; // This seems redundant if currentFile is in pendingStateArgs
+
+	private lastRenderedFileId: string | null = null;
+	private lastRenderedContentType: string | null = null;
+	// Cached HTML for history content when toggling repository setup
+	private savedHistoryHTML: string | null = null;
 
 	constructor(
 		plugin: ObsidianSvnPlugin,
@@ -61,7 +76,6 @@ export class SVNViewRenderer {
 		this.svnClient = svnClient;
 		registerLoggerClass(this, 'SVNViewRenderer');
 		
-		// Initialize managers
 		this.stateManager = new SVNViewStateManager();
 		this.layoutManager = new SVNViewLayoutManager(containerEl);
 		this.statusManager = new SVNViewStatusManager(svnClient, statusDisplay, this.stateManager, fileStateRenderer);
@@ -73,7 +87,6 @@ export class SVNViewRenderer {
 			repositoryHandler
 		);
 		
-		// Store component instances
 		this.toolbar = toolbar;
 		this.fileActions = fileActions;
 		this.statusDisplay = statusDisplay;
@@ -83,187 +96,211 @@ export class SVNViewRenderer {
 		this.repositoryHandler = repositoryHandler;
 	}
 
-	/**
-	 * Initialize the layout once
-	 */
 	initializeLayout(): void {
-		this.layoutManager.initializeLayout();
+		this.layoutManager.initializeLayout(); // Creates toolbar container and other layout elements
+
+		// Call layoutManager.updateToolbar to render the toolbar into its container
+		// The currentFile might be null initially, but SVNToolbar.render handles this.
+		const activeFile = this.plugin.app.workspace.getActiveFile();
+		this.layoutManager.updateToolbar(this.toolbar, activeFile); // This will call toolbar.render()
+
+		// Ensure pin button state is correct after initial render
+		this.toolbar.updateFromSettings();
+
 		this.layoutManager.setupInfoPanel(this.infoPanel, this.fileActions);
-	}	/**
-	 * Handle UI state changes intelligently, processing the latest available state.
-	 */
-	async handleUIStateChange(state: UIState, currentFile: TFile | null): Promise<void> {
-		loggerDebug(this, 'handleUIStateChange invoked for file:', currentFile?.path ?? 'none', 'Current isHandling:', this.isHandlingStateChange);
-		this.pendingState = state;
-		this.pendingFile = currentFile;
+	}
+
+	async handleUIStateChange(state: UIState, currentFile: TFile | null, plugin: ObsidianSvnPlugin): Promise<void> {
+		const entryTime = Date.now();
+		loggerDebug(this, `SVNViewRenderer.handleUIStateChange: Entry at ${entryTime}`, { currentFile: currentFile?.path, stateIsLoading: state.isLoading, stateShowLoading: state.showLoading });
+
+		this.plugin = plugin;
+		const currentPinState = this.plugin.settings.pinCheckedOutRevision;
+
+		const dataChanged = this.stateManager.hasDataChanged(state, currentPinState);
+		// Assuming hasFileChanged was part of SVNViewStateManager, let's check if it exists or if its logic is elsewhere
+		// For now, let's assume it's still there or we'll need to adjust.
+		// It's possible file change detection is now part of hasDataChanged or needs a different approach.
+		// Let's assume for now it's still a method on stateManager. If not, we'll trace it.
+		const fileChanged = this.stateManager.hasFileChanged(currentFile); 
+
+
+		loggerDebug(this, `SVNViewRenderer.handleUIStateChange: Initial checks at ${entryTime}`, { 
+			fileChanged, 
+			dataChanged, 
+			currentPinState, 
+			stateHasData: !!state.data, 
+			stateIsLoading: state.isLoading, 
+			stateShowLoading: state.showLoading 
+		});
 
 		if (this.isHandlingStateChange) {
-			loggerDebug(this, 'Renderer busy, new state queued for file:', currentFile?.path ?? 'none');
+			loggerDebug(this, `SVNViewRenderer.handleUIStateChange: Queuing state change at ${entryTime} because already handling.`);
+			this.pendingStateArgs = { state, currentFile, plugin }; 
 			return;
 		}
-
 		this.isHandlingStateChange = true;
-		loggerDebug(this, 'Renderer started processing.');
+		loggerDebug(this, `SVNViewRenderer.handleUIStateChange: Set isHandlingStateChange = true at ${entryTime}`);
 
 		try {
-			while (this.pendingState) {
-				const stateToProcess = this.pendingState;
-				const fileToProcess = this.pendingFile;
-				
-				// Clear pending state *before* processing this iteration's state
-				this.pendingState = null;
-				this.pendingFile = null;
+			// Use getContentType from stateManager
+			const newContentType = this.stateManager.getContentType(state); 
+			const lastContentTypeBeforeUpdate = this.lastRenderedContentType;
 
-				loggerDebug(this, 'Processing state for file:', fileToProcess?.path ?? 'none', { hasData: !!stateToProcess.data, isLoading: stateToProcess.isLoading, showLoading: stateToProcess.showLoading });
+			loggerDebug(this, `SVNViewRenderer.handleUIStateChange: About to check conditions at ${entryTime}`, { 
+				fileChanged, 
+				dataChangedVal: dataChanged, 
+				newContentType, 
+				lastRenderedContentType: lastContentTypeBeforeUpdate
+			});
 
-				// Check for user interaction or repository setup
-				if (this.stateManager.isInUserInteractionWindow()) {
-					loggerInfo(this, 'Skipping UI update (user interaction) for file:', fileToProcess?.path ?? 'none');
-					continue; // Skip this state, check for newer pending state in the next loop iteration
+			if (fileChanged || dataChanged) {
+				loggerInfo(this, `SVNViewRenderer.handleUIStateChange: Condition (fileChanged || dataChanged) is TRUE at ${entryTime}. dataChanged = ${dataChanged}. Calling updateContentArea.`);
+				// Corrected call to statusManager.updateStatusDisplay - assuming 3 arguments
+				await this.statusManager.updateStatusDisplay(state, this.layoutManager.getStatusContainer(), currentFile);
+				this.updateContentArea(
+					state,
+					currentFile,
+					newContentType,
+					lastContentTypeBeforeUpdate,
+					dataChanged 
+				);
+				this.lastRenderedFileId = currentFile ? currentFile.path : null;
+			} 
+			// Handle content type change (e.g., loading->history or setup->history)
+			else if (newContentType !== lastContentTypeBeforeUpdate) {
+				loggerInfo(this, `SVNViewRenderer.handleUIStateChange: Content type changed from ${lastContentTypeBeforeUpdate} to ${newContentType} at ${entryTime}, forcing rebuild.`);
+				// If switching from SETUP without data change, skip status refresh to avoid SVN calls
+				const wasSetupView = lastContentTypeBeforeUpdate === CONTENT_TYPES.SETUP;
+				if (!(wasSetupView && !dataChanged)) {
+					await this.statusManager.updateStatusDisplay(state, this.layoutManager.getStatusContainer(), currentFile);
 				}
-				if (this.isShowingRepositorySetup()) {
-					loggerInfo(this, 'Skipping UI update (repository setup active) for file:', fileToProcess?.path ?? 'none');
-					continue; // Skip this state, check for newer pending state
-				}
-
-				// Override state data status with recent direct status if within protection window
-				if (this.stateManager.isWithinProtectionWindow() && stateToProcess.data) {
-					const directData = this.stateManager.getLastDirectStatusData();
-					if (directData && directData.status) { // Ensure directData and its status exist
-						stateToProcess.data.status = directData.status;
-						stateToProcess.data.hasLocalChanges = directData.status.some((s: any) => 
-							s.status === SvnStatusCode.MODIFIED || 
-							s.status === SvnStatusCode.ADDED || 
-							s.status === SvnStatusCode.DELETED
-						);
-					}
-				}
-				
-				// If we have fresh direct status data, render override and skip state-driven UI updates
-				if (this.stateManager.isWithinProtectionWindow()) {
-					const statusContainer = this.layoutManager.getStatusContainer();
-					if (statusContainer && this.stateManager.getLastDirectStatusData()) {
-						await this.statusManager.updateStatusDisplay(stateToProcess, statusContainer, fileToProcess);
-						loggerDebug(this, 'Direct status update rendered for file:', fileToProcess?.path ?? 'none');
-						continue; // Skip further processing for this state, check for newer pending state
-					}
-				}
-				
-				// Calculate state hash for intelligent updates
-				const currentDataHash = this.stateManager.calculateStateHash(stateToProcess);
-				const currentFileId = fileToProcess?.path || null;
-				
-				const fileChanged = currentFileId !== this.stateManager.getLastFileId();
-				const dataChanged = currentDataHash !== this.stateManager.getLastDataHash();
-				
-				if (fileChanged || dataChanged) {
-					loggerDebug(this, 'File or data changed, updating view intelligently for file:', fileToProcess?.path ?? 'none', { fileChanged, dataChanged });
-					await this.updateViewIntelligently(stateToProcess, fileChanged, dataChanged, fileToProcess);
-					this.stateManager.setLastDataHash(currentDataHash);
-					this.stateManager.setLastFileId(currentFileId);
-				} else {
-					loggerDebug(this, 'No significant file or data change, skipping full view update for file:', fileToProcess?.path ?? 'none');
+				// Rebuild content area; historyActuallyChanged true to refresh DOM
+				this.updateContentArea(
+					state,
+					currentFile,
+					newContentType,
+					lastContentTypeBeforeUpdate,
+					true 
+				);
+			} else {
+				loggerDebug(this, `SVNViewRenderer.handleUIStateChange: No significant file or data change, skipping full view update at ${entryTime}`, { 
+					fileChanged, 
+					dataChangedVal: dataChanged, 
+					newContentType, 
+					lastRenderedContentType: lastContentTypeBeforeUpdate 
+				});
+				// Use CONTENT_TYPES directly
+				if ([CONTENT_TYPES.NO_FILE, CONTENT_TYPES.ERROR, CONTENT_TYPES.LOADING, CONTENT_TYPES.WAITING_FOR_DATA].includes(newContentType as any)) {				
+					this.updateContentArea(
+						state,
+						currentFile,
+						newContentType,
+						lastContentTypeBeforeUpdate,
+						false 
+					);
 				}
 			}
-		} catch (err) {
-			loggerError(this, 'Error during handleUIStateChange processing loop:', err);
+			this.lastRenderedContentType = newContentType;
+		} catch (error) {
+			loggerError(this, `SVNViewRenderer.handleUIStateChange: Error during state handling at ${entryTime}:`, error);
+			try {
+				const errorState: UIState = { ...state, error: error?.message || 'Unknown rendering error', isLoading: false, showLoading: false };
+				this.updateContentArea(errorState, currentFile, CONTENT_TYPES.ERROR, this.lastRenderedContentType, true);
+				this.lastRenderedContentType = CONTENT_TYPES.ERROR;
+			} catch (renderError) {
+				loggerError(this, `SVNViewRenderer.handleUIStateChange: Failed to render error state at ${entryTime}:`, renderError);
+			}
 		} finally {
+			loggerDebug(this, `SVNViewRenderer.handleUIStateChange: Setting isHandlingStateChange = false at ${entryTime}`);
 			this.isHandlingStateChange = false;
-			loggerDebug(this, 'Renderer finished processing. Pending state available:', !!this.pendingState);
-
-			// If a new state came in and was stored in this.pendingState *after* the while condition
-			// was last checked (e.g., during an await in the loop's last iteration, or if loop didn't run due to initial pendingState being null),
-			// and the loop has exited, we need to re-trigger processing for this new state.
-			if (this.pendingState) {
-				loggerDebug(this, 'Re-triggering handleUIStateChange for pending state after loop completion for file:', this.pendingFile?.path ?? 'none');
-				// Use a microtask to avoid deep recursion and allow current stack to unwind.
-				// Pass the currently stored pendingState and pendingFile.
-				Promise.resolve().then(() => this.handleUIStateChange(this.pendingState!, this.pendingFile)).catch(e => loggerError(this, "Error in re-triggered handleUIStateChange", e));
+			if (this.pendingStateArgs) {
+				loggerDebug(this, `SVNViewRenderer.handleUIStateChange: Processing pending state at ${entryTime}`);
+				// Destructure from pendingStateArgs
+				const { state: pState, currentFile: pFile, plugin: pPlugin } = this.pendingStateArgs; 
+				this.pendingStateArgs = null;
+				await this.handleUIStateChange(pState, pFile, pPlugin);
+			} else {
+				loggerDebug(this, `SVNViewRenderer.handleUIStateChange: No pending state to process at ${entryTime}`);
 			}
 		}
 	}
 
-	/**
-	 * Intelligently update only what has changed
-	 */
 	private async updateViewIntelligently(state: UIState, fileChanged: boolean, dataChanged: boolean, currentFile: TFile | null): Promise<void> {
-		// Ensure layout is initialized
 		this.initializeLayout();
 		
-		// Always update toolbar on file change
 		if (fileChanged) {
 			this.layoutManager.updateToolbar(this.toolbar, currentFile);
 		}
 		
-		// Update status display when data changes
-		// Consider if status display also needs more granular updates to prevent flashing
 		if (dataChanged) {
 			const statusContainer = this.layoutManager.getStatusContainer();
-			await this.statusManager.updateStatusDisplay(state, statusContainer, currentFile);
+			// Corrected call to statusManager.updateStatusDisplay - assuming 3 arguments
+			await this.statusManager.updateStatusDisplay(state, statusContainer, currentFile); 
 		}
 		
-		// Update content area when file or data changes
 		if (fileChanged || dataChanged) {
-			// This method will now be responsible for more granular updates
-			this.updateContentArea(state, currentFile);
+			// updateContentArea expects 5 arguments. We need newContentType and lastContentType.
+			// We should probably get newContentType here.
+			const newContentType = this.stateManager.getContentType(state);
+			// lastContentType would be this.lastRenderedContentType, but it might not be set if this is the first render.
+			// Passing dataChanged as historyActuallyChanged.
+			this.updateContentArea(state, currentFile, newContentType, this.lastRenderedContentType, dataChanged);
 		}
 	}
 
-	/**
-	 * Update content area section only  
-	 */
-	private updateContentArea(state: UIState, currentFile: TFile | null): void {
+	private updateContentArea(
+		state: UIState,
+		currentFile: TFile | null,
+		newContentType: string,
+		lastContentType: string | null,
+		historyActuallyChanged: boolean
+	): void {
 		const contentArea = this.layoutManager.getContentArea();
-		if (!contentArea) return;
+		if (!contentArea) {
+			loggerError(this, "Content area not found in layout manager during updateContentArea");
+			return;
+		}
 
-		const newContentType = this.stateManager.getContentType(state);
-		const lastContentType = this.stateManager.getLastContentType();
-		// Ensure hasHistoryChanged is only evaluated if relevant (i.e., newContentType is 'history')
-		const historyActuallyChanged = newContentType === 'history' ? this.stateManager.hasHistoryChanged(state) : false;
-		
-		loggerInfo(this, 'Content analysis for updateContentArea:', {
+		loggerInfo(this, 'SVNViewRenderer.updateContentArea called with:', {
 			newContentType,
 			lastContentType,
 			historyActuallyChanged,
-			showLoading: state.showLoading,
-			hasData: !!state.data,
-			historyCount: state.data?.history?.length || 0,
-			currentFile: currentFile?.path
+			currentFile: currentFile?.path,
+			pinSetting: this.plugin.settings.pinCheckedOutRevision
 		});
-		
-		// Delegate to HistoryManager to handle rendering and clearing decisions
-		this.historyManager.updateContentAreaDOM( // Renamed to avoid conflict if we keep old one temporarily
+
+		// historyManager.updateContentAreaDOM expects 6 arguments, not 7.
+		// The 7th argument 'this.plugin' was added in the previous step, let's check SVNViewHistoryManager.ts
+		// to confirm if it's needed or if the constructor-injected plugin instance is sufficient.
+		// For now, assuming it's NOT needed as an argument if SVNViewHistoryManager already has it.
+		this.historyManager.updateContentAreaDOM(
 			contentArea,
 			state,
 			currentFile,
 			newContentType,
 			lastContentType,
-			historyActuallyChanged 
+			historyActuallyChanged // Removed this.plugin from here
 		);
-		
-		// Update content type tracking
-		this.stateManager.setLastContentType(newContentType);
-	}	/**
-	 * Show repository setup UI
-	 */
+	}
+
 	showRepositorySetup(currentFile: TFile | null): void {
 		loggerInfo(this, 'Showing repository setup view');
-		// Clear the content area and show repository setup
 		const contentArea = this.layoutManager.getContentArea();
 		if (contentArea) {
+			// Cache existing history HTML before clearing
+			this.savedHistoryHTML = contentArea.innerHTML;
 			contentArea.empty();
 			this.repositoryHandler.renderRepositorySetup(contentArea, currentFile);
 		}
+		// Explicitly set the content type when showing repository setup
+		this.lastRenderedContentType = CONTENT_TYPES.SETUP;
 	}
 
-	/**
-	 * Check if currently showing repository setup
-	 */
 	private isShowingRepositorySetup(): boolean {
 		const contentArea = this.layoutManager.getContentArea();
 		if (!contentArea) return false;
 		
-		// Check for repository setup indicators
 		const hasSetupContent = 
 			contentArea.querySelector('.workspace-leaf-content') !== null ||
 			(contentArea.querySelector('h3')?.textContent?.includes('Repository Setup') ?? false) ||
@@ -273,48 +310,36 @@ export class SVNViewRenderer {
 			(contentArea.textContent?.includes('Checkout Existing Repository') ?? false);
 
 		return hasSetupContent;
-	}/**
-	 * Show the normal file view (opposite of repository setup)
-	 */
-	showNormalView(currentFile: TFile | null): void {
-		loggerInfo(this, 'Showing normal file view');
-		// Clear the content area
-		const contentArea = this.layoutManager.getContentArea();
-		if (contentArea) {
-			contentArea.empty();
-		}
-		
-		// Reset state tracking to ensure fresh rendering
-		this.stateManager.resetStateTracking();
-		
-		// The actual data refresh should be triggered by the caller (SVNView)
-		// This method just prepares the view for normal content
 	}
 
-	/**
-	 * Refresh status directly (for fast updates)
-	 */
-	async refreshStatus(currentFile: TFile | null): Promise<void> {
-		if (!currentFile) return;
-		
-		// Use the status manager's direct update method which now routes properly
-		const statusContainer = this.layoutManager.getStatusContainer();
-		await this.statusManager.updateFileStatusDirect(currentFile, statusContainer);
-	}
+    showNormalView(currentFile: TFile | null): void {
+        loggerInfo(this, 'Showing normal file view');
+        const contentArea = this.layoutManager.getContentArea();
+        if (contentArea) {
+            // Restore cached history HTML if available
+            if (this.savedHistoryHTML !== null) {
+                contentArea.innerHTML = this.savedHistoryHTML;
+                this.savedHistoryHTML = null;
+                return;
+            }
+            // Fallback: clear and await UI state change to re-render
+            contentArea.empty();
+            loggerDebug(this, "showNormalView called, no cached history. Clearing and relying on state change to re-render.");
+        }
+    }
 
-	/**
-	 * Reset all state tracking
-	 */
-	resetStateTracking(): void {
-		this.stateManager.resetStateTracking();
-		this.layoutManager.resetLayout();
-	}
+    // Add public getters for managers if they are needed by SVNView
+    public getStateManager(): SVNViewStateManager {
+        return this.stateManager;
+    }
 
-	// Expose managers for external access if needed
-	getStateManager(): SVNViewStateManager { return this.stateManager; }
-	getLayoutManager(): SVNViewLayoutManager { return this.layoutManager; }
-	getStatusManager(): SVNViewStatusManager { return this.statusManager; }
-	getHistoryManager(): SVNViewHistoryManager { return this.historyManager; }
+    public getLayoutManager(): SVNViewLayoutManager {
+        return this.layoutManager;
+    }
+
+    public getStatusManager(): SVNViewStatusManager {
+        return this.statusManager;
+    }
 }
 
 

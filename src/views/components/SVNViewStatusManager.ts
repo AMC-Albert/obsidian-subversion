@@ -197,16 +197,15 @@ export class SVNViewStatusManager {
 			} else {
 				// File not found in status data - could be clean/unmodified versioned file
 				// Check if the file is actually versioned first
-				if (data.isFileInSvn === true) {
+				if (data.isFileInSvn === true && currentFile) { // Added currentFile null check
 					// File is versioned but has no status entry - it's clean/committed
-					loggerDebug(this, 'renderStatusWithData: File is versioned but clean (no status entry), showing up-to-date status.');
-					renderedType = 'up-to-date';
-					if (lastRenderedType !== renderedType) {
-						const statusTextEl = document.createElement('span');
-						statusTextEl.addClass('svn-status-text');
-						this.statusDisplay.createStatusWithIcon(statusTextEl, SVNConstants.ICONS.UP_TO_DATE, SVNConstants.MESSAGES.UP_TO_DATE, SVNConstants.CSS_CLASSES.UP_TO_DATE);
+					loggerDebug(this, 'renderStatusWithData: Clean versioned file, delegating to SVNStatusDisplay for full info.');
+					fragment = await this.statusDisplay.render(currentFile);
+					renderedType = 'versioned-details'; // Treat as detailed view
+					if (fragment) {
+						// Always replace content for this path to ensure latest revision info is shown
 						container.empty();
-						container.appendChild(statusTextEl);
+						container.appendChild(fragment);
 					}
 					return renderedType;
 				}

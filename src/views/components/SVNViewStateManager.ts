@@ -1,5 +1,6 @@
 import { UIState } from '../SVNUIController';
 import { SvnStatusCode } from '@/types';
+import { TFile } from 'obsidian';
 import { loggerDebug, loggerInfo, loggerError, registerLoggerClass } from '@/utils/obsidian-logger';
 
 /**
@@ -26,11 +27,10 @@ export class SVNViewStateManager {
 	constructor() {
 		registerLoggerClass(this, 'SVNViewStateManager');
 	}
-
 	/**
 	 * Calculate a hash of the current state for change detection
 	 */
-	calculateStateHash(state: UIState): string {
+	calculateStateHash(state: UIState, pinCheckedOutRevision?: boolean): string {
 		const hashData = {
 			isLoading: state.isLoading,
 			showLoading: state.showLoading,
@@ -40,9 +40,52 @@ export class SVNViewStateManager {
 			revision: state.data?.svnInfo?.revision,
 			statusCount: state.data?.status?.length || 0,
 			historyCount: state.data?.history?.length || 0,
-			lastHistoryRevision: state.data?.history?.[0]?.revision
+			lastHistoryRevision: state.data?.history?.[0]?.revision,
+			pinCheckedOutRevision: pinCheckedOutRevision
 		};
 		return JSON.stringify(hashData);
+	}
+
+	/**
+	 * Checks if the overall UI state (including data and pin setting) has changed.
+	 * Takes the full UIState object.
+	 */
+	public hasDataChanged(state: UIState, pinCheckedOutRevision: boolean): boolean {
+		loggerDebug(this, 'hasDataChanged: Entry', { 
+			stateIsLoading: state.isLoading, 
+			stateShowLoading: state.showLoading, 
+			pinCheckedOutRevision,
+			lastDataHash: this.lastDataHash
+		});
+		
+		// Prevent hash update and change detection if we are in a loading state,
+		// as data might be partial or inconsistent.
+		if (state.isLoading || state.showLoading) {
+			loggerDebug(this, 'hasDataChanged: In loading state, returning false and not updating lastDataHash.');
+			return false; 
+		}
+
+		const currentHash = this.calculateStateHash(state, pinCheckedOutRevision);
+
+		if (currentHash !== this.lastDataHash) {
+			loggerInfo(this, 'Overall state changed (data or pin):', { 
+				currentHash, 
+				lastHash: this.lastDataHash, 
+				pinCheckedOutRevision,
+				stateDetails: { // Log some details that go into the hash for easier debugging
+					isLoading: state.isLoading,
+					showLoading: state.showLoading,
+					error: state.error,
+					isWorkingCopy: state.data?.isWorkingCopy,
+					revision: state.data?.svnInfo?.revision,
+					historyCount: state.data?.history?.length
+				}
+			});
+			this.lastDataHash = currentHash;
+			return true;
+		}
+		loggerInfo(this, 'Overall state NOT changed (data or pin):', { currentHash, lastHash: this.lastDataHash, pinCheckedOutRevision });
+		return false;
 	}
 
 	/**
@@ -310,9 +353,17 @@ export class SVNViewStateManager {
 		this.lastDirectStatusData = null;
 		this.userInteractionWindow = 0;
 	}
+
+	/**
+	 * Check if the current file has changed since the last render.
+	 */
+	public hasFileChanged(currentFile: TFile | null): boolean {
+		const currentFileId = currentFile ? currentFile.path : null;
+		if (currentFileId !== this.lastFileId) {
+			loggerInfo(this, 'File changed:', { from: this.lastFileId, to: currentFileId });
+			this.lastFileId = currentFileId;
+			return true;
+		}
+		return false;
+	}
 }
-
-
-
-
-

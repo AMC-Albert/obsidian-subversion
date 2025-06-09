@@ -231,6 +231,22 @@ export class SVNUIController {
 	}
 
 	/**
+	 * Trigger a UI re-render without refreshing data
+	 * Useful when only the UI presentation needs to change (e.g., pin toggle)
+	 */
+	triggerUIRefresh(): void {
+		loggerDebug(this, 'Triggering UI refresh without data refresh');
+		// Simply re-emit the current state to force UI re-rendering
+		this.uiUpdateCallbacks.forEach(callback => {
+			try {
+				callback(this.uiState);
+			} catch (error) {
+				loggerError(this, 'Error in UI refresh callback:', error);
+			}
+		});
+	}
+
+	/**
 	 * Cleanup
 	 */
 	dispose(): void {

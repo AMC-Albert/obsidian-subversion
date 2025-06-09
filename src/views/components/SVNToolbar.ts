@@ -10,6 +10,7 @@ export class SVNToolbar {
 	private fileActions: SVNFileActions;
 	private onRefresh: () => void;
 	private onShowRepoSetup: () => void;
+	private onTogglePin: () => void;
 	private containerEl: HTMLElement | null = null;
 	private buttons: Map<string, ButtonComponent> = new Map();
 
@@ -18,13 +19,15 @@ export class SVNToolbar {
 		svnClient: SVNClient, 
 		fileActions: SVNFileActions,
 		onRefresh: () => void,
-		onShowRepoSetup: () => void
+		onShowRepoSetup: () => void,
+		onTogglePin: () => void
 	) {
 		this.plugin = plugin;
 		this.svnClient = svnClient;
 		this.fileActions = fileActions;
 		this.onRefresh = onRefresh;
 		this.onShowRepoSetup = onShowRepoSetup;
+		this.onTogglePin = onTogglePin;
 	}
 	render(container: HTMLElement, currentFile: TFile | null): void {
 		container.empty();
@@ -73,6 +76,13 @@ export class SVNToolbar {
 			.setTooltip('Refresh history')
 			.setClass('clickable-icon')
 			.onClick(() => this.onRefresh()));
+
+		this.buttons.set('pin', new ButtonComponent(toolbarEl)
+			.setIcon('pin')
+			.setTooltip('Pin checked out revision to top')
+			.setClass('clickable-icon')
+			.onClick(() => this.onTogglePin()));
+
 		this.buttons.set('settings', new ButtonComponent(toolbarEl)
 			.setIcon('wrench')
 			.setTooltip('Repository setup')
@@ -290,6 +300,28 @@ export class SVNToolbar {
 				'settings': false  // Always enabled
 			});
 		}
+	}
+
+	/**
+	 * Update pin button tooltip based on current state
+	 */
+	updatePinButtonTooltip(isActive: boolean): void {
+		const pinButton = this.buttons.get('pin');
+		if (pinButton) {
+			const tooltip = isActive 
+				? 'Unpin checked out revision from top' 
+				: 'Pin checked out revision to top';
+			pinButton.setTooltip(tooltip);
+		}
+	}
+
+	/**
+	 * Update toolbar state from plugin settings
+	 */
+	updateFromSettings(): void {
+		// Update pin button state
+		this.setButtonActive('pin', this.plugin.settings.pinCheckedOutRevision);
+		this.updatePinButtonTooltip(this.plugin.settings.pinCheckedOutRevision);
 	}
 
 	/**

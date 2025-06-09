@@ -1,7 +1,8 @@
-import { exec } from 'child_process';
+import { exec, spawn } from 'child_process'; // Added spawn
 import { promisify } from 'util';
-import { join, dirname, isAbsolute, relative } from 'path'; // Added relative
-import { existsSync, statSync } from 'fs';
+import { join, dirname, isAbsolute, relative, basename } from 'path'; // Added basename
+import { existsSync, statSync, createWriteStream } from 'fs'; // Added createWriteStream
+import * as fs from 'fs/promises'; // For async file operations
 import { SvnLogEntry, SvnStatus, SvnCommandResult, SvnBlameEntry, SvnInfo, SvnStatusCode, SvnPropertyStatus, SvnOperationOptions } from '@/types';
 import { SvnError, SvnNotInstalledError, NotWorkingCopyError, SvnCommandError } from '@/utils/errors';
 import { SVNStatusUtils } from '@/utils';
@@ -15,12 +16,18 @@ export class SVNClient {
 	private statusRequestCache = new Map<string, Promise<SvnStatus[]>>();
 	private findWorkingCopyCache = new Map<string, string | null>();
 	private isFileInSvnResultCache = new Map<string, boolean>();
+	private previewCacheDir: string;
 	
 	// Callback for notifying when cache should be cleared
 	private cacheInvalidationCallback?: () => void;
 	constructor(svnPath: string = 'svn', vaultPath: string = '') {
 		this.svnPath = svnPath;
 		this.vaultPath = vaultPath;
+		if (this.vaultPath) {
+			this.previewCacheDir = join(this.vaultPath, '.obsidian', 'plugins', 'obsidian-subversion', 'preview_cache');
+		} else {
+			this.previewCacheDir = ''; // Will be set properly by setVaultPath
+		}
 		registerLoggerClass(this, 'SVNClient');
 	}
 
@@ -33,6 +40,16 @@ export class SVNClient {
 
 	setVaultPath(vaultPath: string) {
 		this.vaultPath = vaultPath;
+		if (this.vaultPath) {
+			this.previewCacheDir = join(this.vaultPath, '.obsidian', 'plugins', 'obsidian-subversion', 'preview_cache');
+		} else {
+			this.previewCacheDir = '';
+		}
+		// Clear caches that might depend on vaultPath
+		this.findWorkingCopyCache.clear();
+		this.isFileInSvnResultCache.clear();
+		// this.statusRequestCache.clear(); // Status cache might be path-specific, consider implications
+		loggerInfo(this, 'Vault path set and preview cache directory updated:', { vaultPath, previewCacheDir: this.previewCacheDir });
 	}
 
 	getVaultPath(): string {
@@ -47,7 +64,9 @@ export class SVNClient {
 			throw new Error('Vault path not set');
 		}
 		return join(this.vaultPath, filePath);
-	}	private findSvnWorkingCopy(absolutePath: string): string | null {
+	}
+
+	private findSvnWorkingCopy(absolutePath: string): string | null {
 		// Check cache first
 		if (this.findWorkingCopyCache.has(absolutePath)) {
 			return this.findWorkingCopyCache.get(absolutePath)!;
@@ -83,7 +102,6 @@ export class SVNClient {
 		this.findWorkingCopyCache.set(absolutePath, result);
 		return result;
 	}
-
 	async getFileHistory(filePath: string): Promise<SvnLogEntry[]> {
 		try {
 			const absolutePath = this.resolveAbsolutePath(filePath);
@@ -91,51 +109,92 @@ export class SVNClient {
 			if (!workingCopyRoot) {
 				throw new Error('File is not in an SVN working copy');
 			}
-			// Get the repository URL for this file to query history directly from repository
-			let repositoryUrl = null;
+			
+			// For renamed/moved files, try multiple strategies to get complete history
+			let entries: SvnLogEntry[] = [];
+			let lastError: Error | null = null;
+					// Strategy 1: Try getting history with follow-copies to track renames/moves
+			// Use HEAD to get complete history regardless of working copy revision
+			try {
+				const followCommand = `${this.svnPath} log --xml --verbose --limit 100 --use-merge-history -r HEAD:1 "${absolutePath}"`;
+				loggerInfo(this, 'Executing getFileHistory command (with merge history):', followCommand);
+				loggerInfo(this, 'Working directory:', workingCopyRoot);
+				const { stdout } = await execPromise(followCommand, { cwd: workingCopyRoot });
+				loggerDebug(this, 'getFileHistory raw XML output (merge history):', stdout);
+
+				entries = this.parseXmlLog(stdout);
+				loggerDebug(this, 'getFileHistory parsed entries (merge history):', entries);
+				
+				if (entries.length > 0) {
+					// Enrich entries with size information
+					const entriesWithSize = await this.enrichHistoryWithSizes(filePath, entries);
+					return entriesWithSize;
+				}
+			} catch (followError) {
+				lastError = followError;
+				loggerWarn(this, 'Follow copies failed, trying basic log:', followError.message);
+			}
+			
+			// Strategy 2: Try basic log command with HEAD revision
+			try {
+				const basicCommand = `${this.svnPath} log --xml --verbose --limit 100 -r HEAD:1 "${absolutePath}"`;
+				loggerInfo(this, 'Executing getFileHistory command (basic):', basicCommand);
+				const { stdout } = await execPromise(basicCommand, { cwd: workingCopyRoot });
+				loggerDebug(this, 'getFileHistory raw XML output (basic):', stdout);
+
+				entries = this.parseXmlLog(stdout);
+				loggerDebug(this, 'getFileHistory parsed entries (basic):', entries);
+				
+				if (entries.length > 0) {
+					// Enrich entries with size information
+					const entriesWithSize = await this.enrichHistoryWithSizes(filePath, entries);
+					return entriesWithSize;
+				}
+			} catch (basicError) {
+				lastError = basicError;
+				loggerWarn(this, 'Basic log failed, trying repository URL:', basicError.message);
+			}
+			
+			// Strategy 3: Try repository URL as fallback for renamed files
 			try {
 				// Get repository root and relative path to construct full repository URL
 				const infoResult = await execPromise(`${this.svnPath} info --xml "${workingCopyRoot}"`, { cwd: workingCopyRoot });
 				const rootMatch = infoResult.stdout.match(/<root>(.*?)<\/root>/);
 			
-			if (rootMatch) {
-				const repositoryRoot = rootMatch[1];
-				// Calculate relative path from working copy root to file
-				const relativePath = relative(workingCopyRoot, absolutePath).replace(/\\/g, '/');
-				repositoryUrl = `${repositoryRoot}/${relativePath}`;
-				loggerInfo(this, `Constructed repository URL:`, { repositoryRoot, relativePath, repositoryUrl });
+				if (rootMatch) {
+					const repositoryRoot = rootMatch[1];
+					// Calculate relative path from working copy root to file
+					const relativePath = relative(workingCopyRoot, absolutePath).replace(/\\/g, '/');
+					const repositoryUrl = `${repositoryRoot}/${relativePath}`;
+					
+					const repoCommand = `${this.svnPath} log --xml --verbose --limit 100 --use-merge-history -r HEAD:1 "${repositoryUrl}"`;
+					
+					loggerInfo(this, 'Trying repository URL:', { repositoryRoot, relativePath, repositoryUrl });
+					loggerInfo(this, 'Executing getFileHistory command (repository URL):', repoCommand);
+					
+					const { stdout } = await execPromise(repoCommand, { cwd: workingCopyRoot });
+					loggerDebug(this, 'getFileHistory raw XML output (repo URL):', stdout);
+
+					entries = this.parseXmlLog(stdout);
+					loggerDebug(this, 'getFileHistory parsed entries (repo URL):', entries);
+
+					if (entries.length > 0) {
+						// Enrich entries with size information
+						const entriesWithSize = await this.enrichHistoryWithSizes(filePath, entries);
+						return entriesWithSize;
+					}
+				}
+			} catch (repoError) {
+				lastError = repoError;
+				loggerError(this, `All getFileHistory strategies failed. Repository URL error:`, repoError.message);
 			}
-		} catch (infoError) {
-			loggerError(this, `Failed to get repository URL, using local path:`, infoError.message);
-		}
-		
-		// Get complete history from repository
-		// Use repository URL if available, otherwise fall back to local path
-		const targetPath = repositoryUrl || absolutePath;
-		const command = `${this.svnPath} log --xml --verbose --limit 100 "${targetPath}"`;
-		loggerDebug(this, 'getFileHistory debug:', {
-			originalFilePath: filePath,
-			absolutePath,
-			workingCopyRoot,
-			repositoryUrl,
-			targetPath,
-			command,
-			svnPath: this.svnPath,
-			note: 'Using repository URL for direct repository query'
-		});
-
-		loggerInfo(this, 'Executing getFileHistory command:', command);
-		loggerInfo(this, 'Working directory:', workingCopyRoot);
-		const { stdout } = await execPromise(command, { cwd: workingCopyRoot });
-		loggerDebug(this, 'getFileHistory raw XML output:', stdout);
-
-		const entries = this.parseXmlLog(stdout);
-		loggerDebug(this, 'getFileHistory parsed entries:', entries);
-
-		// Enrich entries with size information
-		const entriesWithSize = await this.enrichHistoryWithSizes(filePath, entries);
-
-		return entriesWithSize;
+			
+			// If we reach here, all strategies failed
+			if (lastError) {
+				throw lastError;
+			} else {
+				throw new Error('No file history found');
+			}
 		} catch (error) {
 			loggerError(this, 'getFileHistory error:', { filePath, error: error.message });
 			// Check if this is a "file not in SVN" error and preserve the original message
@@ -147,7 +206,9 @@ export class SVNClient {
 				errorMessage.includes('svn: e155010') || // node not found
 				errorMessage.includes('svn: e200009') || // node not found (different context)
 				errorMessage.includes('svn: e160013')) { // path not found
-				throw error; // Preserve original error
+				// Return empty array instead of throwing error for missing files
+				loggerInfo(this, 'File not found in SVN history, returning empty history');
+				return [];
 			}
 			throw new Error(`Failed to get file history: ${error.message}`);
 		}
@@ -162,20 +223,266 @@ export class SVNClient {
 					this.getFileSizeAtRevision(filePath, entry.revision.toString()),
 					this.getRevisionStorageSize(entry.revision.toString())
 				]);
+
+				// Check for preview image in the repository at this revision
+				const previewImagePath = await this.getPreviewImageForRevision(filePath, entry.revision.toString());
 				
 				enrichedEntries.push({
 					...entry,
 					size: size !== null ? size : undefined,
-					repoSize: repoSize !== null ? repoSize : undefined
+					repoSize: repoSize !== null ? repoSize : undefined,
+					previewImagePath: previewImagePath || undefined // Add preview image path
 				});
 			} catch (error) {
-				loggerError(this, `Failed to get size info for revision ${entry.revision}:`, error.message);
-				// Add entry without size information
+				loggerError(this, `Failed to get size/preview info for revision ${entry.revision}:`, error.message);
+				// Add entry without size or preview information
 				enrichedEntries.push(entry);
 			}
 		}
 		
 		return enrichedEntries;
+	}
+
+	/**
+	 * Check if a preview image exists for a given file and revision in the repository.
+	 * Returns the repository path to the preview image if it exists, otherwise null.
+	 */
+	private async getPreviewImageForRevision(filePath: string, revision: string): Promise<string | null> {
+		try {
+			const absolutePath = this.resolveAbsolutePath(filePath);
+			const workingCopyRoot = this.findSvnWorkingCopy(absolutePath);
+			if (!workingCopyRoot) {
+				return null; // Not in a working copy
+			}
+
+			// Construct the preview file name based on the original file's name
+			// e.g., if filePath is "MyProject/File.blend", previewFileName is "File.blend.preview.png"
+			const originalFileName = basename(filePath); // "File.blend"
+			const previewFileName = originalFileName + '.preview.png'; // "File.blend.preview.png"
+			
+			// The preview is expected to be in the same directory in the repo as the original file.
+			// We need the repo-relative path of the original file's directory.
+			const repoInfoForFile = await this.getInfo(absolutePath);
+			if (!repoInfoForFile || !repoInfoForFile.url || !repoInfoForFile.repositoryRoot) {
+				loggerWarn(this, `Could not get repo URL or root for ${absolutePath}`);
+				return null;
+			}
+			
+			const fileUrlInRepo = repoInfoForFile.url; // Full URL like svn://server/repo/trunk/MyProject/File.blend
+			const repoRootDirUrl = repoInfoForFile.repositoryRoot; // svn://server/repo
+			
+			let fileDirInRepoFullUrl = dirname(fileUrlInRepo); // svn://server/repo/trunk/MyProject
+			if (fileDirInRepoFullUrl === '.' || fileDirInRepoFullUrl === repoRootDirUrl) { // Handle files in repo root
+				fileDirInRepoFullUrl = repoRootDirUrl;
+			}
+
+			const potentialPreviewFullUrl = (fileDirInRepoFullUrl.endsWith('/') ? fileDirInRepoFullUrl : fileDirInRepoFullUrl + '/') + previewFileName;
+			
+			// Use svn list to check if the preview file exists at the specified revision
+			const command = `${this.svnPath} list "${potentialPreviewFullUrl}@${revision}" --non-interactive`;
+			loggerDebug(this, 'Checking for preview with command:', command);
+			await execPromise(command, { cwd: workingCopyRoot });
+			
+			// If the command succeeds, the file exists. We need its relative path from the repo root.
+			if (potentialPreviewFullUrl.startsWith(repoRootDirUrl)) {
+				let relativePathToRepo = potentialPreviewFullUrl.substring(repoRootDirUrl.length);
+				if (!relativePathToRepo.startsWith('/')) {
+					relativePathToRepo = '/' + relativePathToRepo;
+				}
+				loggerInfo(this, `Preview image found for ${filePath} at revision ${revision}: ${relativePathToRepo}`);
+				return relativePathToRepo;
+			}
+			loggerWarn(this, "Could not form relative path for preview:", {potentialPreviewFullUrl, repoRootDirUrl});
+			return null;
+
+		} catch (error) {
+			// If svn list fails (e.g., file not found), it will throw an error.
+			// This means the preview image does not exist at this revision.
+			loggerDebug(this, `Preview image not found for ${filePath} at revision ${revision} (svn list failed):`, error.message);
+			return null;
+		}
+	}
+
+	private async ensurePreviewCacheDirExists(): Promise<void> {
+		if (!this.previewCacheDir) {
+			loggerError(this, 'Preview cache directory path is not set. Vault path might be missing or plugin not fully initialized.');
+			throw new Error('Preview cache directory not configured.');
+		}
+		try {
+			await fs.mkdir(this.previewCacheDir, { recursive: true });
+		} catch (error) {
+			loggerError(this, `Failed to create preview cache directory ${this.previewCacheDir}:`, error);
+			// Don't re-throw, allow operations to fail gracefully if cache dir can't be made
+		}
+	}
+
+	public async getLocalPreviewImage(
+		originalFileWorkingPath: string, // e.g., "MyProject/Assets/MyMaterial.mat" (vault relative)
+		previewFileRepoRelativePath: string, // e.g., "/trunk/Assets/MyMaterial.mat.preview.png"
+		revision: string
+	): Promise<string | null> {
+		if (!this.previewCacheDir) {
+			loggerWarn(this, 'Preview cache directory is not configured (vaultPath likely not set). Cannot get/store preview image.');
+			return null;
+		}
+		// Attempt to create cache dir, log error if fails but try to continue if possible (e.g. read-only cache)
+		await this.ensurePreviewCacheDirExists().catch(err => {
+			loggerError(this, "Failed to ensure preview cache directory exists, previews may not work:", err);
+			// Potentially return null here if cache is essential for writing
+			// For now, we'll let it try, it might fail later at fs.access or write.
+		});
+
+
+		const absoluteOriginalPath = this.resolveAbsolutePath(originalFileWorkingPath);
+		const workingCopyRoot = this.findSvnWorkingCopy(absoluteOriginalPath);
+		if (!workingCopyRoot) {
+			loggerWarn(this, `Cannot find SVN working copy for ${originalFileWorkingPath} to fetch preview.`);
+			return null;
+		}
+
+		const baseName = basename(originalFileWorkingPath);
+		const safeBaseName = baseName.replace(/[^a-zA-Z0-9_.-]/g, '_');
+		const cachedFileName = `${safeBaseName}_r${revision}.png`;
+		const localCachedPath = join(this.previewCacheDir, cachedFileName);
+
+		try {
+			await fs.access(localCachedPath);
+			loggerInfo(this, `Preview image found in cache: ${localCachedPath}`);
+			return localCachedPath;
+		} catch {
+			// Not cached or not accessible, proceed to fetch
+		}
+
+		let repoRootUrl: string;
+		try {
+			const info = await this.getInfo(workingCopyRoot);
+			if (!info || !info.repositoryRoot) {
+				loggerError(this, `Could not determine repository root for working copy: ${workingCopyRoot}`);
+				return null;
+			}
+			repoRootUrl = info.repositoryRoot;
+		} catch (error) {
+			loggerError(this, `Failed to get SVN info for ${workingCopyRoot}:`, error);
+			return null;
+		}
+
+		let fullPreviewUrl = repoRootUrl;
+		if (fullPreviewUrl.endsWith('/') && previewFileRepoRelativePath.startsWith('/')) {
+			fullPreviewUrl += previewFileRepoRelativePath.substring(1);
+		} else if (!fullPreviewUrl.endsWith('/') && !previewFileRepoRelativePath.startsWith('/')) {
+			fullPreviewUrl += '/' + previewFileRepoRelativePath;
+		} else {
+			fullPreviewUrl += previewFileRepoRelativePath;
+		}
+		
+		const fullPreviewUrlWithRevision = `${fullPreviewUrl}@${revision}`;
+		const tempFilePath = localCachedPath + '.tmp';
+
+		loggerInfo(this, `Fetching preview image: ${fullPreviewUrlWithRevision} into ${localCachedPath}`);
+
+		try {
+			await new Promise<void>((resolve, reject) => {
+				const svnProcess = spawn(this.svnPath, ['cat', fullPreviewUrlWithRevision, '--non-interactive'], { cwd: workingCopyRoot });
+				const fileStream = createWriteStream(tempFilePath);
+
+				svnProcess.stdout.pipe(fileStream);
+				let stderrData = '';
+				svnProcess.stderr.on('data', (data) => {
+					stderrData += data.toString();
+				});
+				svnProcess.on('error', (err) => {
+					fileStream.close();
+					fs.unlink(tempFilePath).catch(() => {});
+					// Corrected SvnCommandError constructor call
+					reject(new SvnCommandError(`svn cat ${fullPreviewUrlWithRevision}`, -1, `Failed to start svn cat process: ${err.message}`));
+				});
+				
+				fileStream.on('finish', () => {
+					// This can be called even if svn process exits with error, if stdout had some data.
+					// Rely on 'close' event for final status.
+					resolve(); 
+				});
+				fileStream.on('error', (err) => {
+					svnProcess.kill(); // Ensure process is killed
+					fs.unlink(tempFilePath).catch(() => {});
+					reject(new Error(`Failed to write preview image to temp file ${tempFilePath}: ${err.message}`));
+				});
+
+				svnProcess.on('close', (code) => {
+					fileStream.end(() => { // Ensure filestream is closed and flushed before resolving/rejecting
+						if (code !== 0) {
+							loggerWarn(this, `SVN cat process for ${fullPreviewUrlWithRevision} exited with code ${code}. Stderr: ${stderrData}`);
+							fs.unlink(tempFilePath).catch(() => {});
+							// Corrected SvnCommandError constructor call
+							reject(new SvnCommandError(`svn cat ${fullPreviewUrlWithRevision}`, code || -1, stderrData || 'SVN cat failed. Preview might not exist at this revision.'));
+						} else {
+							// If code is 0, 'finish' on writestream should have handled resolve.
+							// However, if stdout was empty, finish might not be enough.
+							// Check if file has content if necessary, or assume svn cat success means content.
+							resolve(); // Resolve here again to be sure if finish didn't fire or was premature.
+						}
+					});
+				});
+			});
+
+			await fs.rename(tempFilePath, localCachedPath);
+			loggerInfo(this, `Successfully cached preview image: ${localCachedPath}`);
+			return localCachedPath;
+
+		} catch (error) {
+			loggerError(this, `Failed to fetch or save preview image ${fullPreviewUrlWithRevision}:`, error.message);
+			await fs.unlink(tempFilePath).catch(() => {});
+			return null;
+		}
+	}
+
+	/**
+	 * Check if a file exists in SVN at a specific revision
+	 * This is useful for handling renamed/moved files gracefully
+	 */
+	private async fileExistsAtRevision(filePath: string, revision: string): Promise<boolean> {
+		try {
+			const absolutePath = this.resolveAbsolutePath(filePath);
+			const workingCopyRoot = this.findSvnWorkingCopy(absolutePath);
+			if (!workingCopyRoot) {
+				return false;
+			}
+
+			const command = `${this.svnPath} cat -r ${revision} "${absolutePath}" --depth empty`;
+			await execPromise(command, { cwd: workingCopyRoot });
+			return true;
+		} catch (error) {
+			loggerDebug(this, `File ${filePath} does not exist at revision ${revision}:`, error.message);
+			return false;
+		}
+	}
+
+	/**
+	 * Get the actual file path at a specific revision (handles renames)
+	 */
+	private async getFilePathAtRevision(filePath: string, revision: string): Promise<string | null> {
+		try {
+			const absolutePath = this.resolveAbsolutePath(filePath);
+			const workingCopyRoot = this.findSvnWorkingCopy(absolutePath);
+			if (!workingCopyRoot) {
+				return null;
+			}
+
+			// Try to get file info at the specific revision
+			const command = `${this.svnPath} info -r ${revision} "${absolutePath}" --xml`;
+			const result = await execPromise(command, { cwd: workingCopyRoot });
+			
+			// Parse the XML to get the actual path
+			const pathMatch = result.stdout.match(/<relative-url>\^?\/?([^<]*)<\/relative-url>/);
+			if (pathMatch) {
+				return pathMatch[1];
+			}
+			
+			return null;
+		} catch (error) {
+			loggerDebug(this, `Could not get file path at revision ${revision}:`, error.message);
+			return null;
+		}
 	}
 
 	async getFileRevisions(filePath: string): Promise<string[]> {
@@ -267,40 +574,80 @@ export class SVNClient {
 
 			loggerInfo(this, `Getting repository size for revision ${revision}, working copy: ${workingCopyRoot}`);
 
-			// Get repository root path from svn info
+			// Get repository information using svn info
 			const infoCommand = `${this.svnPath} info --xml "${workingCopyRoot}"`;
 			const infoResult = await execPromise(infoCommand, { cwd: workingCopyRoot });
 			
+			// Parse multiple potential repository paths
 			const rootMatch = infoResult.stdout.match(/<root>(.*?)<\/root>/);
+			const urlMatch = infoResult.stdout.match(/<url>(.*?)<\/url>/);
+			const uuidMatch = infoResult.stdout.match(/<uuid>(.*?)<\/uuid>/);
+			
 			if (!rootMatch) {
-				loggerError(this, 'Could not determine repository path from svn info');
+				loggerError(this, 'Could not determine repository root from svn info');
 				return null;
 			}
 			
 			const repositoryUrl = rootMatch[1];
 			loggerDebug(this, 'Repository URL found:', repositoryUrl);
 			
-			// Convert file:// URL to local path for svnadmin
-			let repositoryPath = repositoryUrl.replace(/^file:\/\/\//, '').replace(/^file:\/\//, '');
-			// Convert forward slashes to backslashes on Windows
-			repositoryPath = repositoryPath.replace(/\//g, '\\');
-			
-			loggerDebug(this, 'Repository path converted:', repositoryPath);
-			
-			// Use svnadmin rev-size to get the actual repository storage size
-			const command = `svnadmin rev-size "${repositoryPath}" -r ${revision} -q`;
-			loggerDebug(this, 'Executing command:', command);
-			
-			const result = await execPromise(command);
-			
-			const size = parseInt(result.stdout.trim(), 10);
-			if (!isNaN(size)) {
-				loggerInfo(this, `Repository size for revision ${revision}: ${size} bytes`);
-				return size;
+			// Check if this is a file:// URL pointing to a local repository
+			if (repositoryUrl.startsWith('file://')) {
+				// Convert file:// URL to local path for svnadmin
+				let repositoryPath = repositoryUrl.replace(/^file:\/\/\//, '').replace(/^file:\/\//, '');
+				
+				// Properly decode URL-encoded characters (like %20 for spaces)
+				try {
+					repositoryPath = decodeURIComponent(repositoryPath);
+				} catch (decodeError) {
+					loggerWarn(this, 'Failed to decode repository path, using as-is:', repositoryPath);
+				}
+				
+				// Convert forward slashes to backslashes on Windows
+				if (process.platform === 'win32') {
+					repositoryPath = repositoryPath.replace(/\//g, '\\');
+				}
+				
+				loggerDebug(this, 'Repository path converted:', repositoryPath);
+				
+				// Verify the repository path exists
+				if (!existsSync(repositoryPath)) {
+					loggerError(this, `Repository path does not exist: ${repositoryPath}`);
+					return null;
+				}
+				
+				// Verify it's actually an SVN repository by checking for required files
+				const formatFile = join(repositoryPath, 'format');
+				if (!existsSync(formatFile)) {
+					loggerError(this, `Not a valid SVN repository (missing format file): ${repositoryPath}`);
+					return null;
+				}
+				
+				// Use svnadmin rev-size to get the actual repository storage size
+				const command = `svnadmin rev-size "${repositoryPath}" -r ${revision} -q`;
+				loggerDebug(this, 'Executing svnadmin command:', command);
+				
+				try {
+					const result = await execPromise(command);
+					
+					const size = parseInt(result.stdout.trim(), 10);
+					if (!isNaN(size)) {
+						loggerInfo(this, `Repository size for revision ${revision}: ${size} bytes`);
+						return size;
+					}
+					
+					loggerError(this, `Could not parse repository size from output: ${result.stdout}`);
+					return null;
+				} catch (svnadminError) {
+					loggerError(this, `svnadmin rev-size failed:`, svnadminError.message);
+					return null;
+				}
+			} else {
+				// For remote repositories, we can't use svnadmin
+				loggerWarn(this, 'Remote repository detected, cannot get precise revision size with svnadmin:', repositoryUrl);
+				return null;
 			}
-			
-			loggerError(this, `Could not parse repository size from output: ${result.stdout}`);
-			return null;		} catch (error: any) {
+		} catch (error: any) {
 			loggerError(this, `Failed to get repository size for revision ${revision}:`, error.message);
 			return null;
 		}
@@ -347,7 +694,19 @@ export class SVNClient {
 			// Ensure the file itself is added to SVN
 			await this.ensureFileIsAdded(fullPath);
 
-			const command = `svn commit -m \"${message}\" \"${fullPath}\"`;
+			// Check for and add .preview.png file
+			const previewPath = fullPath + '.preview.png';
+			const previewFileExists = existsSync(previewPath);
+			let commitPaths = [fullPath];
+
+			if (previewFileExists) {
+				loggerInfo(this, 'Preview file found, ensuring it is added:', { previewPath });
+				await this.ensureFileIsAdded(previewPath);
+				commitPaths.push(previewPath);
+			}
+
+			const commitPathsString = commitPaths.map(p => `\"${p}\"`).join(' ');
+			const command = `svn commit -m \"${message}\" ${commitPathsString}`;
 			loggerInfo(this, 'Executing command:', { command });
 			const { stdout, stderr } = await execPromise(command);
 
@@ -465,7 +824,7 @@ export class SVNClient {
 			}
 		}
 		
-		// Clear cache after add operation to ensure fresh status data
+		// Clear cache after addFile operation to ensure fresh status data
 		this.clearStatusCache();
 	}
 

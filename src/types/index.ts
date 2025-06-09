@@ -75,6 +75,8 @@ export interface SvnLogEntry {
     repoSize?: number;
     /** Changed paths in this revision */
     changedPaths?: SvnChangedPath[];
+    /** Relative path to the preview image in the repo for this revision */
+    previewImagePath?: string;
 }
 
 /**
@@ -143,6 +145,8 @@ export interface SvnPluginSettings {
     autoCommit: boolean;
     /** Repository display name */
     repositoryName: string;
+    /** Whether to pin the currently checked out revision at the top */
+    pinCheckedOutRevision: boolean;
     /** Maximum number of log entries to fetch */
     maxLogEntries?: number;
     /** Timeout for SVN operations in milliseconds */

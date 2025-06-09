@@ -135,12 +135,13 @@
 
 .svn-size {
     font-size: var(--font-ui-smaller);
-    color: var(--text-accent);
+    color: var(--text-muted);
     font-weight: var(--font-weight-medium);
     white-space: nowrap;
     background: var(--background-modifier-border);
     padding: 1px var(--size-2-2);
     border-radius: var(--radius-s);
+    height: fit-content;
 }
 
 .svn-entry-actions {
@@ -360,6 +361,66 @@
     margin: 0;
 }
 
+/* Pinned revision container styles */
+.svn-pinned-revision-container {
+    margin-bottom: var(--size-4-4);
+    border: 2px solid var(--interactive-accent);
+    border-radius: var(--radius-m);
+    background: var(--background-modifier-success);
+    position: relative;
+    overflow: hidden;
+}
+
+.svn-pinned-revision-container.svn-pinned-empty {
+    border-color: var(--background-modifier-border);
+    background: var(--background-secondary);
+}
+
+.svn-pinned-header {
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+    padding: var(--size-2-2) var(--size-4-2);
+    font-size: var(--font-ui-smaller);
+    font-weight: var(--font-weight-medium);
+    display: flex;
+    align-items: center;
+    gap: var(--size-2-2);
+}
+
+.svn-pinned-empty .svn-pinned-header {
+    background: var(--background-modifier-border);
+    color: var(--text-muted);
+}
+
+.svn-pinned-title {
+    font-weight: var(--font-weight-semibold);
+}
+
+.svn-pinned-item {
+    display: flex;
+    align-items: stretch;
+    padding: var(--size-4-2);
+    gap: var(--size-4-2);
+    position: relative;
+    background: var(--background-primary);
+}
+
+.svn-pinned-item .svn-revision {
+    background: var(--color-accent);
+    border: 2px solid var(--interactive-accent);
+}
+
+.svn-pinned-empty-message {
+    padding: var(--size-4-4);
+    text-align: center;
+}
+
+.svn-empty-text {
+    color: var(--text-muted);
+    font-style: italic;
+    font-size: var(--font-ui-small);
+}
+
 .svn-history-item {
     display: flex;
     align-items: stretch;
@@ -410,30 +471,6 @@
     font-size: var(--font-ui-smaller);
     color: var(--text-muted);
     white-space: nowrap;
-}
-
-.svn-history-item .svn-size {
-    color: var(--text-muted);
-    font-size: var(--font-ui-smaller);
-    font-weight: var(--tag-weight);
-    background: var(--background-modifier-border);
-    padding: 2px 6px;
-    border-radius: var(--radius-s);
-}
-
-.svn-history-item .svn-repo-size {
-    font-size: var(--font-ui-smaller);
-    font-weight: var(--tag-weight);
-    background: var(--color-accent);
-    padding: 2px 6px;
-    border-radius: var(--radius-s);
-}
-
-.svn-delta-symbol {
-    font-size: 9px;
-    opacity: 0.7;
-    vertical-align: top;
-    margin-right: var(--size-2-1);
 }
 
 .svn-history-item .svn-message {
@@ -506,4 +543,27 @@ button:disabled,
 @media (max-width: 400px) {
     .svn-entry-info { gap: var(--size-2-2); }
     .svn-author { display: none; }
+}
+
+/* Preview thumbnails in history */
+.svn-history-preview-thumbnail {
+	max-width: 32px;
+	max-height: 32px;
+	margin-left: 5px;
+	border-radius: 4px;
+	box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+	transition: transform 0.1s ease-in-out;
+	cursor: pointer;
+}
+
+.svn-history-preview-thumbnail:hover {
+	transform: scale(1.1);
+	box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
+/* Larger preview on click/modal */
+.svn-preview-modal img {
+	max-width: 90vw;
+	max-height: 90vh;
+	object-fit: contain;
 }

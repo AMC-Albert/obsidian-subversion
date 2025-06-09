@@ -1,4 +1,4 @@
-import { TFile } from 'obsidian';
+import { TFile, setTooltip } from 'obsidian';
 import { SVNClient } from '../../services/SVNClient';
 import { SVNStatusUtils } from '../../utils/SVNStatusUtils';
 import { SVNConstants } from '../../utils/SVNConstants';
@@ -49,7 +49,6 @@ export class SVNStatusDisplay {
 		await this.renderStatusContent(statusEl, currentFile);
 		return fragment;
 	}
-
 	private async renderStatusContent(statusEl: HTMLElement, currentFile: TFile): Promise<void> {
 		// This method now appends its content to statusEl, which is already part of the fragment.
 		// It doesn't call container.empty() anymore.
@@ -66,34 +65,9 @@ export class SVNStatusDisplay {
 				return;
 			}
 			
-			const svnInfo = await this.svnClient.getInfo(currentFile.path);
+			// Remove revision info since it's now shown in the pinned container
+			// Just show the status container for the status message
 			const statusContainer = statusEl.createEl('div', { cls: 'svn-status-container' });
-			
-			if (svnInfo && svnInfo.revision) {
-				const revisionEl = statusContainer.createEl('span', { 
-					cls: 'svn-status-revision'
-				});
-				revisionEl.createEl('span', { 
-					text: 'r' + svnInfo.revision,
-					cls: 'svn-revision-badge'
-				});
-				
-				if (svnInfo.lastChangedAuthor) {
-					revisionEl.createEl('span', {
-						text: ' by ' + svnInfo.lastChangedAuthor,
-						cls: 'svn-revision-author'
-					});
-				}
-				if (svnInfo.lastChangedDate) {
-					const date = new Date(svnInfo.lastChangedDate).toLocaleDateString();
-					revisionEl.createEl('span', {
-						text: ' on ' + date,
-						cls: 'svn-revision-date'
-					});
-				}
-			} else {
-				loggerDebug(this, "No revision info available. svnInfo:", svnInfo);
-			}
 			
 			const statusArray = await this.svnClient.getStatus(currentFile.path);
 			const fileStatus = statusArray.find(item => 
@@ -177,10 +151,35 @@ export class SVNStatusDisplay {
 			return true;
 		}
 	}
-
 	private isSvnClientReady(): boolean {
 		return this.svnClient && 
 			   typeof this.svnClient.setVaultPath === 'function';
+	}
+
+	/**
+	 * Get the current file size from the vault
+	 */
+	private async getFileSize(file: TFile): Promise<number | undefined> {
+		try {
+			const stat = await file.vault.adapter.stat(file.path);
+			return stat?.size;
+		} catch (error) {
+			loggerError(this, 'Error getting file size:', error);
+			return undefined;
+		}
+	}
+
+	/**
+	 * Format file size in human-readable format
+	 */
+	private formatFileSize(bytes: number): string {
+		if (bytes === 0) return '0 B';
+		
+		const k = 1024;
+		const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+		const i = Math.floor(Math.log(bytes) / Math.log(k));
+		
+		return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 	}
 }
 

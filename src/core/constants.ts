@@ -30,7 +30,8 @@ export const DEFAULT_SETTINGS = {
 	svnBinaryPath: 'svn',
 	commitMessage: 'Update from Obsidian',
 	autoCommit: false,
-	repositoryName: 'subversion-repo'
+	repositoryName: 'subversion-repo',
+	pinCheckedOutRevision: false
 };
 
 export const SVN_ICON_SVG = `

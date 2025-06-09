@@ -157,8 +157,7 @@ export class SVNViewHistoryManager {
 
 	/**
 	 * Render history data efficiently
-	 */
-	renderHistoryWithData(
+	 */	renderHistoryWithData(
 		container: HTMLElement, 
 		data: SvnFileData, 
 		currentFile: TFile | null, // Though currentFile should always be non-null if we reach here with 'history' type
@@ -169,24 +168,50 @@ export class SVNViewHistoryManager {
 			filePath: currentFile?.path,
 			historyCount: data.history?.length || 0,
 			lastContentType,
-			historyContentActuallyChanged
+			historyContentActuallyChanged,
+			pinCheckedOutRevision: this.plugin.settings.pinCheckedOutRevision
 		});
 		
-		let historyList = container.querySelector('.svn-history-list') as HTMLElement;
+		const shouldShowPinnedRevision = this.plugin.settings.pinCheckedOutRevision;
 		
-		// Determine if a full rebuild of the history list is necessary
-		const needsFullRebuild = !historyList || lastContentType !== 'history' || historyContentActuallyChanged;
+		// Determine if a full rebuild is necessary
+		const needsFullRebuild = lastContentType !== 'history' || historyContentActuallyChanged;
 		
 		if (needsFullRebuild) {
 			loggerDebug(this, 'Rebuilding history list because:', { 
-				listExists: !!historyList, 
 				lastContentTypeSVC: lastContentType, // SVC for "Subversion" to avoid conflict
 				historyContentActuallyChangedSVC: historyContentActuallyChanged // SVC for "Subversion"
 			});
 			container.empty(); // Clear the container specifically for the history list
-			historyList = container.createEl('ul', { cls: 'svn-history-list' });
 			
-			data.history.forEach((entry: any, index: number) => {
+			// Check if we need to show pinned revision
+			let pinnedRevision: any = null;
+			let remainingHistory = data.history;
+			
+			if (shouldShowPinnedRevision && data.svnInfo) {
+				// Find the currently checked out revision
+				const currentRevision = data.svnInfo.revision;
+				pinnedRevision = data.history.find(entry => entry.revision === currentRevision);
+				
+				if (pinnedRevision) {
+					// Remove the pinned revision from the main list
+					remainingHistory = data.history.filter(entry => entry.revision !== currentRevision);
+				}
+			}
+			
+			// Render pinned revision container if needed
+			if (shouldShowPinnedRevision) {
+				if (pinnedRevision) {
+					this.renderPinnedRevisionContainer(container, pinnedRevision, data.history, currentFile);
+				} else {
+					this.renderEmptyPinnedContainer(container);
+				}
+			}
+			
+			// Create main history list
+			const historyList = container.createEl('ul', { cls: 'svn-history-list' });
+			
+			remainingHistory.forEach((entry: any, index: number) => {
 				this.createHistoryItem(historyList, entry, index, data.history, currentFile);
 			});
 		} else {
@@ -195,13 +220,16 @@ export class SVNViewHistoryManager {
 			// without triggering historyContentActuallyChanged (e.g., relative dates, though not used here).
 			// For now, just update action buttons as per existing logic.
 			loggerDebug(this, 'Updating existing history items (actions only).');
-			const existingItems = historyList.querySelectorAll('.svn-history-item');
-			data.history.forEach((entry: any, index: number) => {
-				const historyItem = existingItems[index] as HTMLElement;
-				if (historyItem) {
-					this.updateHistoryItemActions(historyItem, entry, index, data.history, currentFile);
-				}
-			});
+			const historyList = container.querySelector('.svn-history-list') as HTMLElement;
+			if (historyList) {
+				const existingItems = historyList.querySelectorAll('.svn-history-item');
+				data.history.forEach((entry: any, index: number) => {
+					const historyItem = existingItems[index] as HTMLElement;
+					if (historyItem) {
+						this.updateHistoryItemActions(historyItem, entry, index, data.history, currentFile);
+					}
+				});
+			}
 		}
 	}
 
@@ -258,28 +286,31 @@ export class SVNViewHistoryManager {
 		const dateEl = headerEl.createEl('span', { 
 			text: new Date(entry.date).toLocaleString(),
 			cls: 'svn-date'
-		});
-		setTooltip(dateEl, `Committed on: ${new Date(entry.date).toLocaleString()}`);		// Add file size information if available
-		if (entry.size !== undefined) {
-			const sizeEl = headerEl.createEl('span', { 
-				text: this.formatFileSize(entry.size),
-				cls: 'svn-size'
+		});		setTooltip(dateEl, `Committed on: ${new Date(entry.date).toLocaleString()}`);
+		
+		// Add combined storage size information (prioritize repository storage)
+		if (entry.repoSize !== undefined || entry.size !== undefined) {
+			const storageEl = headerEl.createEl('span', { 
+				cls: 'svn-size' // Use the original svn-size styling
 			});
-			setTooltip(sizeEl, `File size: ${this.formatFileSize(entry.size)}`);
-		}
-		// Add repository storage size if available
-		if (entry.repoSize !== undefined) {
-			const repoSizeEl = headerEl.createEl('span', { 
-				cls: 'svn-repo-size'
-			});
-			setTooltip(repoSizeEl, `Repository storage: ${this.formatFileSize(entry.repoSize)}`);
-			repoSizeEl.createEl('span', { 
-				text: 'Δ',
-				cls: 'svn-delta-symbol'
-			});
-			repoSizeEl.createEl('span', { 
-				text: `${this.formatFileSize(entry.repoSize)}`
-			});
+			
+			// Display repository storage by default, fall back to file size
+			const displaySize = entry.repoSize ?? entry.size;
+			const displayText = entry.repoSize !== undefined ? this.formatFileSize(entry.repoSize) : this.formatFileSize(entry.size!);
+			
+			storageEl.setText(displayText);
+			
+			// Create comprehensive tooltip
+			let tooltipText = '';
+			if (entry.repoSize !== undefined && entry.size !== undefined) {
+				tooltipText = `Repository storage: ${this.formatFileSize(entry.repoSize)}\nFile size: ${this.formatFileSize(entry.size)}`;
+			} else if (entry.repoSize !== undefined) {
+				tooltipText = `Repository storage: ${this.formatFileSize(entry.repoSize)}`;
+			} else {
+				tooltipText = `File size: ${this.formatFileSize(entry.size!)}`;
+			}
+			
+			setTooltip(storageEl, tooltipText);
 		}
 		// Add commit message
 		if (entry.message) {
@@ -323,6 +354,110 @@ export class SVNViewHistoryManager {
 		const i = Math.floor(Math.log(bytes) / Math.log(k));
 		
 		return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+	}
+
+	/**
+	 * Render the pinned revision container with the current checkout
+	 */
+	private renderPinnedRevisionContainer(container: HTMLElement, pinnedRevision: any, fullHistory: any[], currentFile: TFile | null): void {
+		loggerDebug(this, 'Rendering pinned revision container', { revision: pinnedRevision.revision });
+		
+		// Create pinned container
+		const pinnedContainer = container.createEl('div', { cls: 'svn-pinned-revision-container' });
+		
+		// Add header
+		const headerEl = pinnedContainer.createEl('div', { cls: 'svn-pinned-header' });
+		headerEl.createEl('span', { 
+			text: 'Currently Checked Out',
+			cls: 'svn-pinned-title'
+		});
+		
+		// Create pinned item (similar to regular history item but with different styling)
+		const pinnedItem = pinnedContainer.createEl('div', { cls: 'svn-pinned-item' });
+		
+		// Create main content container
+		const contentEl = pinnedItem.createEl('div', { cls: 'svn-history-list-info-container' });
+		
+		// Create header with revision info
+		const revisionHeaderEl = contentEl.createEl('div', { cls: 'svn-history-header' });
+		const revisionEl = revisionHeaderEl.createEl('span', { 
+			text: `r${pinnedRevision.revision}`,
+			cls: 'svn-revision svn-pinned-revision'
+		});
+		setTooltip(revisionEl, `Currently checked out revision ${pinnedRevision.revision}`);
+		
+		const authorEl = revisionHeaderEl.createEl('span', { 
+			text: pinnedRevision.author,
+			cls: 'svn-author'
+		});
+		setTooltip(authorEl, `Author: ${pinnedRevision.author}`);
+		
+		const dateEl = revisionHeaderEl.createEl('span', { 
+			text: new Date(pinnedRevision.date).toLocaleString(),
+			cls: 'svn-date'
+		});
+		setTooltip(dateEl, `Committed on: ${new Date(pinnedRevision.date).toLocaleString()}`);
+		
+		// Add combined storage size information
+		if (pinnedRevision.repoSize !== undefined || pinnedRevision.size !== undefined) {
+			const storageEl = revisionHeaderEl.createEl('span', { 
+				cls: 'svn-size'
+			});
+			
+			const displaySize = pinnedRevision.repoSize ?? pinnedRevision.size;
+			const displayText = pinnedRevision.repoSize !== undefined ? this.formatFileSize(pinnedRevision.repoSize) : this.formatFileSize(pinnedRevision.size!);
+			
+			storageEl.setText(displayText);
+			
+			let tooltipText = '';
+			if (pinnedRevision.repoSize !== undefined && pinnedRevision.size !== undefined) {
+				tooltipText = `Repository storage: ${this.formatFileSize(pinnedRevision.repoSize)}\nFile size: ${this.formatFileSize(pinnedRevision.size)}`;
+			} else if (pinnedRevision.repoSize !== undefined) {
+				tooltipText = `Repository storage: ${this.formatFileSize(pinnedRevision.repoSize)}`;
+			} else {
+				tooltipText = `File size: ${this.formatFileSize(pinnedRevision.size!)}`;
+			}
+			
+			setTooltip(storageEl, tooltipText);
+		}
+		
+		// Add commit message
+		if (pinnedRevision.message) {
+			const messageEl = contentEl.createEl('span', { cls: 'svn-message' });
+			messageEl.setText(pinnedRevision.message);
+			setTooltip(messageEl, 'Commit message');
+		}
+		
+		// Add action buttons for pinned item
+		if (currentFile) {
+			const actionsEl = pinnedItem.createEl('div', { cls: 'svn-history-actions' });
+			const pinnedIndex = fullHistory.findIndex(entry => entry.revision === pinnedRevision.revision);
+			this.historyRenderer.addHistoryItemActions(actionsEl, currentFile.path, pinnedRevision, pinnedIndex, fullHistory);
+		}
+	}
+
+	/**
+	 * Render an empty pinned container when no revision is checked out
+	 */
+	private renderEmptyPinnedContainer(container: HTMLElement): void {
+		loggerDebug(this, 'Rendering empty pinned revision container');
+		
+		// Create empty pinned container
+		const pinnedContainer = container.createEl('div', { cls: 'svn-pinned-revision-container svn-pinned-empty' });
+		
+		// Add header
+		const headerEl = pinnedContainer.createEl('div', { cls: 'svn-pinned-header' });
+		headerEl.createEl('span', { 
+			text: 'Currently Checked Out',
+			cls: 'svn-pinned-title'
+		});
+		
+		// Add empty state message
+		const emptyEl = pinnedContainer.createEl('div', { cls: 'svn-pinned-empty-message' });
+		emptyEl.createEl('span', { 
+			text: 'No specific revision checked out',
+			cls: 'svn-empty-text'
+		});
 	}
 }
 

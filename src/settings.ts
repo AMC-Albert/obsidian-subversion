@@ -75,6 +75,16 @@ export class SvnSettingTab extends PluginSettingTab {
 					this.plugin.settings.commitMessage = value;
 					await this.plugin.saveSettings();
 				}));
+
+		new Setting(containerEl)
+			.setName('Pin checked out revision')
+			.setDesc('Show the currently checked out revision in a separate pinned container at the top of the history.')
+			.addToggle(toggle => toggle
+				.setValue(this.plugin.settings.pinCheckedOutRevision)
+				.onChange(async (value) => {
+					this.plugin.settings.pinCheckedOutRevision = value;
+					await this.plugin.saveSettings();
+				}));
 	}
 }
 
