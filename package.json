@@ -20,7 +20,7 @@
 		"esbuild-plugin-alias": "^0.2.1",
 		"obsidian": "latest",
 		"tslib": "2.4.0",
-		"typescript": "5.0.4"
+		"typescript": "^5.3.0"
 	},
 	"dependencies": {
 		"chrono-node": "^2.8.0",

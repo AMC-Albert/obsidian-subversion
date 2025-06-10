@@ -34,42 +34,75 @@ export class SVNToolbar {
 		this.containerEl = container;
 		this.buttons.clear(); // Clear previous button references
 		const toolbarEl = container.createEl('div', { cls: 'nav-buttons-container' });
-
 		this.buttons.set('add', new ButtonComponent(toolbarEl)
 			.setIcon('plus')
 			.setTooltip('Add file to version control')
 			.setClass('clickable-icon')
-			.onClick(() => this.fileActions.addFile(currentFile)));
+			.onClick(() => {
+				const activeFile = this.plugin.app.workspace.getActiveFile();
+				if (activeFile) {
+					this.fileActions.addFile(activeFile);
+				} else {
+					new Notice('No active file to add.');
+				}
+			}));
 
 		this.buttons.set('commit', new ButtonComponent(toolbarEl)
 			.setIcon('check')
 			.setTooltip('Commit file')
 			.setClass('clickable-icon')
-			.onClick(() => this.fileActions.quickCommit(currentFile)));
+			.onClick(() => {
+				const activeFile = this.plugin.app.workspace.getActiveFile();
+				if (activeFile) {
+					this.fileActions.quickCommit(activeFile);
+				} else {
+					new Notice('No active file to commit.');
+				}
+			}));
 
 		this.buttons.set('revert', new ButtonComponent(toolbarEl)
 			.setIcon('undo')
 			.setTooltip('Revert file')
 			.setClass('clickable-icon')
-			.onClick(() => this.fileActions.revertFile(currentFile)));
+			.onClick(() => {
+				const activeFile = this.plugin.app.workspace.getActiveFile();
+				if (activeFile) {
+					this.fileActions.revertFile(activeFile);
+				} else {
+					new Notice('No active file to revert.');
+				}
+			}));
 
 		this.buttons.set('diff', new ButtonComponent(toolbarEl)
 			.setIcon('file-diff')
 			.setTooltip('Show diff')
 			.setClass('clickable-icon')
-			.onClick(() => this.fileActions.showCurrentDiff(currentFile)));
+			.onClick(() => {
+				const activeFile = this.plugin.app.workspace.getActiveFile();
+				if (activeFile) {
+					this.fileActions.showCurrentDiff(activeFile);
+				} else {
+					new Notice('No active file to show diff for.');
+				}
+			}));
 
 		this.buttons.set('info', new ButtonComponent(toolbarEl)
 			.setIcon('info')
 			.setTooltip('Show file info')
 			.setClass('clickable-icon')
 			.onClick(() => this.fileActions.toggleInfoDisplay()));
-
 		this.buttons.set('remove', new ButtonComponent(toolbarEl)
 			.setIcon('trash')
 			.setTooltip('Remove file from version control')
 			.setClass('clickable-icon')
-			.onClick(() => this.fileActions.removeFromSvn(currentFile)));
+			.onClick(() => {
+				const activeFile = this.plugin.app.workspace.getActiveFile();
+				if (activeFile) {
+					this.fileActions.removeFromSvn(activeFile);
+				} else {
+					new Notice('No active file to remove.');
+				}
+			}));
 
 		this.buttons.set('refresh', new ButtonComponent(toolbarEl)
 			.setIcon('refresh-cw')
