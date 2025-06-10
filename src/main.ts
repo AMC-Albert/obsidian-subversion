@@ -5,7 +5,7 @@ import { registerCommands } from '@/core';
 import { SVNClient } from '@/services';
 import { SVNView as FileHistoryView, FILE_HISTORY_VIEW_TYPE } from '@/views';
 import { PLUGIN_CONSTANTS, DEFAULT_SETTINGS, SVN_ICON_SVG } from '@/core';
-import { initLogger, loggerDebug, loggerInfo, loggerError, loggerWarn, registerLoggerClass, initializeDebugSystem, setLoggerPluginId } from '@/utils/obsidian-logger'; // Added setLoggerPluginId
+import { initLogger, loggerDebug, loggerInfo, loggerError, registerLoggerClass, initializeDebugSystem } from '@/utils/obsidian-logger';
 
 /**
  * Main plugin class for Obsidian SVN integration
@@ -17,14 +17,10 @@ export default class ObsidianSvnPlugin extends Plugin {
 	private statusUpdateTimer: number | null = null;
 	private lastActiveFile: string | null = null;
 	async onload() {
-		// Initialize logger with plugin instance
 		initLogger(this);
-        setLoggerPluginId(this.manifest.id); // Set plugin ID for stack parsing
-
 		registerLoggerClass(this, 'ObsidianSvnPlugin');
 		
-		// Initialize debug logging
-		loggerDebug(this, 'onload', `Loading ${PLUGIN_CONSTANTS.PLUGIN_NAME} plugin`);
+		loggerDebug(this, `Loading ${PLUGIN_CONSTANTS.PLUGIN_NAME} plugin`);
 		
 		// Register SVN icon
 		addIcon(PLUGIN_CONSTANTS.ICON_ID, SVN_ICON_SVG);
