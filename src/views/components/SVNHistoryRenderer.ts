@@ -1,4 +1,4 @@
-import { Notice, WorkspaceLeaf } from 'obsidian';
+import { Notice, WorkspaceLeaf, setTooltip } from 'obsidian';
 import { ButtonComponent } from 'obsidian';
 import { SVNClient } from '../../services/SVNClient';
 import { DiffModal } from '../../modals/DiffModal';
@@ -24,8 +24,11 @@ export class SVNHistoryRenderer {
 
 	/**
 	 * Add action buttons for a history item (used by data bus system)
+	 * @returns true if any buttons were added, false otherwise
 	 */
-	addHistoryItemActions(actionsEl: HTMLElement, filePath: string, entry: SvnLogEntry, index: number, history: SvnLogEntry[]): void {
+	addHistoryItemActions(actionsEl: HTMLElement, filePath: string, entry: SvnLogEntry, index: number, history: SvnLogEntry[], previewContainer?: HTMLElement | null, currentRevision?: number): boolean {
+		let buttonsAdded = false;
+		
 		// Diff button (not available for first revision)
 		if (index > 0) {
 			const diffBtn = new ButtonComponent(actionsEl)
@@ -37,16 +40,29 @@ export class SVNHistoryRenderer {
 				evt.stopPropagation();
 				this.showDiff(filePath, history[index - 1].revision, entry.revision);
 			});
+			buttonsAdded = true;
 		}
 
+		// Checkout button - only show if this is not the currently checked out revision
+		if (currentRevision === undefined || entry.revision !== currentRevision) {
+			const checkoutBtn = new ButtonComponent(actionsEl)
+				.setIcon('download')
+				.setTooltip(`Checkout revision ${entry.revision}`)
+				.setClass('clickable-icon')
+			checkoutBtn.buttonEl.addEventListener('click', (evt) => {
+				evt.preventDefault();
+				evt.stopPropagation();
+				this.checkoutRevision(filePath, entry.revision.toString());
+			});
+			buttonsAdded = true;
+		}
+		
 		// Add preview image if available
-		if (entry.previewImagePath && this.currentFilePathForPreviews) {
-			const imgEl = actionsEl.createEl('img', { cls: 'svn-history-preview-thumbnail' });
-			imgEl.style.maxWidth = '32px'; // Or some other appropriate size
-			imgEl.style.maxHeight = '32px';
-			imgEl.style.marginLeft = '5px';
-			imgEl.alt = `Preview for r${entry.revision}`;
-			imgEl.title = `Click to view larger preview for revision ${entry.revision}`;			// Asynchronously load and set the image source
+		if (entry.previewImagePath && this.currentFilePathForPreviews && previewContainer) {
+			const imgEl = previewContainer.createEl('img', { cls: 'svn-history-preview-thumbnail' });
+			setTooltip(imgEl, `Click to enlarge preview for revision ${entry.revision}`);
+			
+			// Asynchronously load and set the image source
 			this.svnClient.getLocalPreviewImage(
 				this.currentFilePathForPreviews, // The working path of the main file (e.g., .blend file)
 				entry.previewImagePath,       // Repo-relative path of the preview image
@@ -88,6 +104,7 @@ export class SVNHistoryRenderer {
 				loggerError(this, `Error loading preview image for r${entry.revision}:`, err);
 			});
 		}
+		return buttonsAdded;
 	}
 
 	private showDiff(filePath: string, fromRevision: number, toRevision: number): void {

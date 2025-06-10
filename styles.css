@@ -432,7 +432,6 @@
 
 .svn-history-item:hover {
     background: var(--background-modifier-hover);
-    border-radius: var(--radius-s);
 }
 
 .svn-history-content {
@@ -441,15 +440,11 @@
     margin-top: var(--size-4-2);
 }
 
-.svn-history-list-info-container {
-    flex: 1;
-}
-
 .svn-history-header {
     display: flex;
     align-items: center;
     gap: var(--size-4-2);
-    margin-bottom: var(--size-2-1);
+    flex-wrap: wrap;
 }
 
 .svn-history-item .svn-revision {
@@ -476,22 +471,29 @@
 .svn-history-item .svn-message {
     font-size: var(--font-ui-smaller);
     color: var(--text-muted);
-    margin-top: var(--size-2-1);
-    margin-bottom: var(--size-2-1);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    display: inline-block;
+    display: block;
     max-width: 100%;
 }
 
 .svn-history-actions {
+    position: absolute;
+    top: 50%;
+    right: var(--size-4-2);
+    transform: translateY(-50%);
     display: flex;
     align-items: center;
     justify-content: flex-end;
     gap: var(--size-2-1);
-    flex-shrink: 0;
-    padding-left: var(--size-4-2);
+    opacity: 0;
+    visibility: hidden;
+    background: var(--background-primary);
+    padding: var(--size-2-2);
+    border-radius: var(--radius-s);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    border: 1px solid var(--background-modifier-border);
 }
 
 /* Enhanced Status Display Styles */
@@ -546,22 +548,55 @@ button:disabled,
 }
 
 /* Preview thumbnails in history */
+.svn-history-item {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--size-4-3);
+    padding: var(--size-4-2);
+    border-bottom: 1px solid var(--background-modifier-border-hover);
+    position: relative;
+}
+
+.svn-history-item:hover {
+    background: var(--background-modifier-hover);
+}
+
+.svn-history-item:hover .svn-history-actions {
+    opacity: 1;
+    visibility: visible;
+}
+
+.svn-pinned-item {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--size-4-3);
+    padding: var(--size-4-2);
+    position: relative;
+}
+
+.svn-pinned-item:hover .svn-history-actions {
+    opacity: 1;
+    visibility: visible;
+}
+
+.svn-history-preview-container {
+    flex-shrink: 0;
+    width: 80px;
+    height: 80px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--background-secondary);
+    border-radius: var(--radius-m);
+}
+
 .svn-history-preview-thumbnail {
-	max-width: 32px;
-	max-height: 32px;
-	margin-left: 5px;
-	border-radius: 4px;
-	box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
-	transition: transform 0.1s ease-in-out;
-	cursor: pointer;
+    max-width: 100%;
+    max-height: 100%;
+    border-radius: var(--radius-s);
+    object-fit: cover;
 }
 
-.svn-history-preview-thumbnail:hover {
-	transform: scale(1.1);
-	box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
-}
-
-/* Larger preview on click/modal */
 .svn-preview-modal img {
 	max-width: 90vw;
 	max-height: 90vh;

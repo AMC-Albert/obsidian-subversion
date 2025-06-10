@@ -157,7 +157,8 @@ export class SVNViewHistoryManager {
 
 	/**
 	 * Render history data efficiently
-	 */	renderHistoryWithData(
+	 */
+	renderHistoryWithData(
 		container: HTMLElement, 
 		data: SvnFileData, 
 		currentFile: TFile | null, // Though currentFile should always be non-null if we reach here with 'history' type
@@ -210,9 +211,8 @@ export class SVNViewHistoryManager {
 			
 			// Create main history list
 			const historyList = container.createEl('ul', { cls: 'svn-history-list' });
-			
 			remainingHistory.forEach((entry: any, index: number) => {
-				this.createHistoryItem(historyList, entry, index, data.history, currentFile);
+				this.createHistoryItem(historyList, entry, index, data.history, currentFile, data.svnInfo?.revision);
 			});
 		} else {
 			// If not rebuilding, we assume the list structure is intact.
@@ -251,21 +251,43 @@ export class SVNViewHistoryManager {
 
 	/**
 	 * Update just the action buttons of an existing history item
-	 */
-	private updateHistoryItemActions(historyItem: HTMLElement, entry: any, index: number, fullHistory: any[], currentFile: TFile | null): void {
-		const actionsEl = historyItem.querySelector('.svn-history-actions') as HTMLElement;
-		if (actionsEl && currentFile) {
-			// Only update if actions container exists and we have the file
-			actionsEl.empty();
-			this.historyRenderer.addHistoryItemActions(actionsEl, currentFile.path, entry, index, fullHistory);
+	 */	private updateHistoryItemActions(historyItem: HTMLElement, entry: any, index: number, fullHistory: any[], currentFile: TFile | null, currentRevision?: number): void {
+		const existingActionsEl = historyItem.querySelector('.svn-history-actions') as HTMLElement;
+		const previewEl = historyItem.querySelector('.svn-history-preview-container') as HTMLElement;
+		const contentEl = historyItem.querySelector('.svn-history-list-info-container') as HTMLElement;
+		
+		if (currentFile && contentEl) {
+			// Create a temporary actions container to test if buttons will be added
+			const tempActionsEl = contentEl.createEl('div', { cls: 'svn-history-actions' });
+			const hasButtons = this.historyRenderer.addHistoryItemActions(tempActionsEl, currentFile.path, entry, index, fullHistory, previewEl, currentRevision);
+			
+			if (hasButtons) {
+				// Remove existing actions container if it exists
+				if (existingActionsEl) {
+					existingActionsEl.remove();
+				}
+				// Keep the new container with buttons
+			} else {
+				// Remove both the temporary and existing containers
+				tempActionsEl.remove();
+				if (existingActionsEl) {
+					existingActionsEl.remove();
+				}
+			}
 		}
 	}
 
 	/**
 	 * Create a single history item
 	 */
-	private createHistoryItem(historyList: HTMLElement, entry: any, index: number, fullHistory: any[], currentFile: TFile | null): void {
+	private createHistoryItem(historyList: HTMLElement, entry: any, index: number, fullHistory: any[], currentFile: TFile | null, currentRevision?: number): void {
 		const listItem = historyList.createEl('li', { cls: 'svn-history-item' });
+		
+		// Create preview container on the left (if preview exists)
+		let previewEl: HTMLElement | null = null;
+		if (entry.previewImagePath && currentFile) {
+			previewEl = listItem.createEl('div', { cls: 'svn-history-preview-container' });
+		}
 		
 		// Create main content container
 		const contentEl = listItem.createEl('div', { cls: 'svn-history-list-info-container' });
@@ -286,7 +308,8 @@ export class SVNViewHistoryManager {
 		const dateEl = headerEl.createEl('span', { 
 			text: new Date(entry.date).toLocaleString(),
 			cls: 'svn-date'
-		});		setTooltip(dateEl, `Committed on: ${new Date(entry.date).toLocaleString()}`);
+		});
+		setTooltip(dateEl, `Committed on: ${new Date(entry.date).toLocaleString()}`);
 		
 		// Add combined storage size information (prioritize repository storage)
 		if (entry.repoSize !== undefined || entry.size !== undefined) {
@@ -318,28 +341,16 @@ export class SVNViewHistoryManager {
 			messageEl.setText(entry.message);
 			setTooltip(messageEl, 'Commit message');
 		}
-		// Make the entire item clickable to checkout this revision
+
 		if (currentFile) {
-			listItem.addClass('clickable-history-item');
-			listItem.addEventListener('click', async (evt) => {
-				// Don't trigger checkout if clicking on action buttons
-				if ((evt.target as HTMLElement).closest('.svn-history-actions')) {
-					return;
-				}
-				
-				evt.preventDefault();
-				evt.stopPropagation();
-				
-				try {
-					await this.historyRenderer.checkoutRevision(currentFile.path, entry.revision);
-				} catch (error) {
-					console.error('Error checking out revision:', error);
-				}
-			});
+			// Add action buttons (diff only, no checkout) - only create container if buttons will be added
+			const tempActionsEl = contentEl.createEl('div', { cls: 'svn-history-actions' });
+			const hasButtons = this.historyRenderer.addHistoryItemActions(tempActionsEl, currentFile.path, entry, index, fullHistory, previewEl, currentRevision);
 			
-			// Add action buttons (diff only, no checkout)
-			const actionsEl = listItem.createEl('div', { cls: 'svn-history-actions' });
-			this.historyRenderer.addHistoryItemActions(actionsEl, currentFile.path, entry, index, fullHistory);
+			// Remove the container if no buttons were added
+			if (!hasButtons) {
+				tempActionsEl.remove();
+			}
 		}
 	}
 
@@ -371,9 +382,15 @@ export class SVNViewHistoryManager {
 			text: 'Currently Checked Out',
 			cls: 'svn-pinned-title'
 		});
-		
+
 		// Create pinned item (similar to regular history item but with different styling)
 		const pinnedItem = pinnedContainer.createEl('div', { cls: 'svn-pinned-item' });
+		
+		// Create preview container on the left (if preview exists)
+		let previewEl: HTMLElement | null = null;
+		if (pinnedRevision.previewImagePath && currentFile) {
+			previewEl = pinnedItem.createEl('div', { cls: 'svn-history-preview-container' });
+		}
 		
 		// Create main content container
 		const contentEl = pinnedItem.createEl('div', { cls: 'svn-history-list-info-container' });
@@ -427,12 +444,16 @@ export class SVNViewHistoryManager {
 			messageEl.setText(pinnedRevision.message);
 			setTooltip(messageEl, 'Commit message');
 		}
-		
-		// Add action buttons for pinned item
+		// Add action buttons for pinned item - only create container if buttons will be added
 		if (currentFile) {
-			const actionsEl = pinnedItem.createEl('div', { cls: 'svn-history-actions' });
+			const tempActionsEl = contentEl.createEl('div', { cls: 'svn-history-actions' });
 			const pinnedIndex = fullHistory.findIndex(entry => entry.revision === pinnedRevision.revision);
-			this.historyRenderer.addHistoryItemActions(actionsEl, currentFile.path, pinnedRevision, pinnedIndex, fullHistory);
+			const hasButtons = this.historyRenderer.addHistoryItemActions(tempActionsEl, currentFile.path, pinnedRevision, pinnedIndex, fullHistory, previewEl);
+			
+			// Remove the container if no buttons were added
+			if (!hasButtons) {
+				tempActionsEl.remove();
+			}
 		}
 	}
 
