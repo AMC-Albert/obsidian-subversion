@@ -9,29 +9,6 @@ This plugin integrates Subversion (SVN) version control into Obsidian, allowing 
 - Easy configuration of SVN binary path.
 - User-friendly interface for selecting revisions.
 
-## Debugging
-
-To troubleshoot issues with the Subversion plugin, you can enable debug logging:
-
-### Quick Setup
-
-1. Open the developer console (`Ctrl+Shift+I` / `Cmd+Option+I`)
-2. Run:
-
-```javascript
-window.DEBUG.enable('subversion')
-```
-
-### Disable Debug
-
-```javascript
-window.DEBUG.disable('subversion')
-```
-
-You should see `[subversion]` messages in the console when:
-- Viewing and interacting with the SVN view
-- Plugin encounters issues
-
 ## Installation
 
 1. Clone the repository:
@@ -64,16 +41,8 @@ Before using the plugin, you need to specify the path to your SVN binary. You ca
 - Navigate to the SVN Plugin settings.
 - Enter the path to your SVN binary or ensure it is in your PATH environment variable.
 
-## Usage
+## Debugging
 
-- Access the file history view from the command palette.
-- Select a file to view its revision history.
-- Use the revision modal to checkout specific revisions.
+In Developer Console (`Ctrl+Shift+I`), run `window.DEBUG.enable('sidecars')`
 
-## Contributing
-
-Contributions are welcome! Please open an issue or submit a pull request for any enhancements or bug fixes.
-
-## License
-
-This project is licensed under the MIT License. See the LICENSE file for details.
+To learn more, see [obsidian-logger](https://github.com/AMC-Albert/obsidian-logger).
