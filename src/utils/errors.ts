@@ -29,9 +29,12 @@ export class NotWorkingCopyError extends SvnError {
 }
 
 export class SvnCommandError extends SvnError {
+    public readonly exitCode: number;
+
     constructor(command: string, exitCode: number, stderr: string) {
-        super(`SVN command failed: ${command}`);
+        super(`SVN command failed with exit code ${exitCode}: ${command}. Error: ${stderr}`, command, stderr);
         this.name = 'SvnCommandError';
+        this.exitCode = exitCode;
     }
 }
 

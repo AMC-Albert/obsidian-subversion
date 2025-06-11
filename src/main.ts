@@ -1,4 +1,4 @@
-import { Plugin, TFile, Notice, WorkspaceLeaf, FileSystemAdapter, addIcon } from 'obsidian';
+import { Plugin, TFile, Notice, WorkspaceLeaf, FileSystemAdapter, addIcon, TAbstractFile } from 'obsidian';
 import { SvnSettingTab } from '@/settings';
 import { SvnPluginSettings } from '@/types';
 import { registerCommands } from '@/core';
@@ -6,6 +6,7 @@ import { SVNClient } from '@/services';
 import { SVNView as FileHistoryView, FILE_HISTORY_VIEW_TYPE } from '@/views';
 import { PLUGIN_CONSTANTS, DEFAULT_SETTINGS, SVN_ICON_SVG } from '@/core';
 import { initLogger, loggerDebug, loggerInfo, loggerError, loggerWarn, registerLoggerClass, initializeDebugSystem } from '@/utils/obsidian-logger'; // Added setLoggerPluginId
+import { basename, dirname } from 'path'; // Added basename and dirname
 
 /**
  * Main plugin class for Obsidian SVN integration
@@ -245,8 +246,42 @@ export default class ObsidianSvnPlugin extends Plugin {
 		
 		// Update history views when files are renamed
 		this.registerEvent(
-			this.app.vault.on('rename', (file: TFile) => {
-				this.handleFileChange(file);
+			this.app.vault.on('rename', async (file: TAbstractFile, oldPath: string) => {
+				loggerInfo(this, `Obsidian rename event: from "${oldPath}" to "${file.path}"`);
+
+				try {
+					const result = await this.svnClient.move(oldPath, file.path);
+					
+					if (result.skipped) {
+						const message = result.message || `SVN move skipped for ${basename(oldPath)}.`;
+						loggerInfo(this, message);
+						new Notice(message, 7000);
+					} else if (result.success) {
+						const message = `SVN: Moved ${basename(oldPath)} to ${file.path}`;
+						loggerInfo(this, message + (result.output ? ` Output: ${result.output}` : ''));
+						new Notice(message, 5000);
+					} else {
+						// This case should ideally be covered by errors thrown from svnClient.move
+						const errorMessage = result.error || result.output || `SVN move failed for ${basename(oldPath)}.`;
+						loggerError(this, `SVN move reported failure for ${oldPath} to ${file.path}: ${errorMessage}`);
+						new Notice(errorMessage, 10000);
+					}
+				} catch (error) {
+					let errorMessage = `SVN: Error moving ${basename(oldPath)}`;
+					if (error instanceof Error) {
+						errorMessage += `: ${error.message}`;
+					} else {
+						errorMessage += `: An unknown error occurred.`;
+					}
+					loggerError(this, `Error during SVN move for ${oldPath} to ${file.path}:`, error);
+					new Notice(errorMessage, 15000);
+				} finally {
+					// Schedule a general status refresh.
+					// The svnClient.move method invalidates its caches,
+					// which in turn calls SVNDataStore.clearAllLocalCaches via callback.
+					// This refresh will then fetch fresh data.
+					this.scheduleStatusRefresh();
+				}
 			})
 		);
 	}

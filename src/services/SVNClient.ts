@@ -103,27 +103,36 @@ export class SVNClient {
 		return result;
 	}
 	async getFileHistory(filePath: string): Promise<SvnLogEntry[]> {
+		// Helper function defined at the start of the method to be accessible throughout
+		const isKnownNotFoundError = (message: string): boolean => {
+			const lowerMessage = message.toLowerCase();
+			return lowerMessage.includes('svn: e160013') || // path not found
+				   lowerMessage.includes('svn: e195002') || // no committed revision
+				   lowerMessage.includes('node was not found') ||
+				   lowerMessage.includes('is not under version control');
+		};
+
 		try {
 			const absolutePath = this.resolveAbsolutePath(filePath);
 			const workingCopyRoot = this.findSvnWorkingCopy(absolutePath);
 			if (!workingCopyRoot) {
-				throw new Error('File is not in an SVN working copy');
+				// This is a legitimate error if we expect a working copy.
+				loggerWarn(this, `File "${filePath}" is not in an SVN working copy. Cannot get history.`);
+				return []; // Return empty history as it's not versioned here.
 			}
 			
-			// For renamed/moved files, try multiple strategies to get complete history
 			let entries: SvnLogEntry[] = [];
 			let lastError: Error | null = null;
-					// Strategy 1: Try getting history with follow-copies to track renames/moves
-			// Use HEAD to get complete history regardless of working copy revision
+			
+			// Strategy 1: Try getting history with follow-copies to track renames/moves
 			try {
 				const followCommand = `${this.svnPath} log --xml --verbose --limit 100 --use-merge-history -r HEAD:1 "${absolutePath}"`;
-				loggerInfo(this, 'Executing getFileHistory command (with merge history):', followCommand);
-				loggerInfo(this, 'Working directory:', workingCopyRoot);
+				loggerDebug(this, 'getFileHistory (Strategy 1 - Merge History) command:', followCommand, 'CWD:', workingCopyRoot);
 				const { stdout } = await execPromise(followCommand, { cwd: workingCopyRoot });
 				loggerDebug(this, 'getFileHistory raw XML output (merge history):', stdout);
 
 				entries = this.parseXmlLog(stdout);
-				loggerDebug(this, 'getFileHistory parsed entries (merge history):', entries);
+				loggerDebug(this, 'getFileHistory parsed entries (merge history):', entries.length);
 				
 				if (entries.length > 0) {
 					// Enrich entries with size information
@@ -131,19 +140,24 @@ export class SVNClient {
 					return entriesWithSize;
 				}
 			} catch (followError) {
-				lastError = followError;
-				loggerWarn(this, 'Follow copies failed, trying basic log:', followError.message);
+				lastError = followError as Error;
+				const errorMessage = (followError as Error).message || '';
+				if (isKnownNotFoundError(errorMessage)) {
+					loggerInfo(this, 'getFileHistory (Strategy 1 - Merge History) failed as expected for new/uncommitted file:', errorMessage.split('\n')[0]);
+				} else {
+					loggerWarn(this, 'getFileHistory (Strategy 1 - Merge History) failed, trying basic log:', errorMessage.split('\n')[0]);
+				}
 			}
 			
 			// Strategy 2: Try basic log command with HEAD revision
 			try {
 				const basicCommand = `${this.svnPath} log --xml --verbose --limit 100 -r HEAD:1 "${absolutePath}"`;
-				loggerInfo(this, 'Executing getFileHistory command (basic):', basicCommand);
+				loggerDebug(this, 'getFileHistory (Strategy 2 - Basic Log) command:', basicCommand, 'CWD:', workingCopyRoot);
 				const { stdout } = await execPromise(basicCommand, { cwd: workingCopyRoot });
 				loggerDebug(this, 'getFileHistory raw XML output (basic):', stdout);
 
 				entries = this.parseXmlLog(stdout);
-				loggerDebug(this, 'getFileHistory parsed entries (basic):', entries);
+				loggerDebug(this, 'getFileHistory parsed entries (basic):', entries.length);
 				
 				if (entries.length > 0) {
 					// Enrich entries with size information
@@ -151,66 +165,81 @@ export class SVNClient {
 					return entriesWithSize;
 				}
 			} catch (basicError) {
-				lastError = basicError;
-				loggerWarn(this, 'Basic log failed, trying repository URL:', basicError.message);
+				lastError = basicError as Error;
+				const errorMessage = (basicError as Error).message || '';
+				if (isKnownNotFoundError(errorMessage)) {
+					loggerInfo(this, 'getFileHistory (Strategy 2 - Basic Log) failed as expected for new/uncommitted file:', errorMessage.split('\n')[0]);
+				} else {
+					loggerWarn(this, 'getFileHistory (Strategy 2 - Basic Log) failed, trying repository URL:', errorMessage.split('\n')[0]);
+				}
 			}
 			
 			// Strategy 3: Try repository URL as fallback for renamed files
 			try {
-				// Get repository root and relative path to construct full repository URL
 				const infoResult = await execPromise(`${this.svnPath} info --xml "${workingCopyRoot}"`, { cwd: workingCopyRoot });
 				const rootMatch = infoResult.stdout.match(/<root>(.*?)<\/root>/);
 			
 				if (rootMatch) {
 					const repositoryRoot = rootMatch[1];
-					// Calculate relative path from working copy root to file
 					const relativePath = relative(workingCopyRoot, absolutePath).replace(/\\/g, '/');
 					const repositoryUrl = `${repositoryRoot}/${relativePath}`;
 					
 					const repoCommand = `${this.svnPath} log --xml --verbose --limit 100 --use-merge-history -r HEAD:1 "${repositoryUrl}"`;
 					
-					loggerInfo(this, 'Trying repository URL:', { repositoryRoot, relativePath, repositoryUrl });
-					loggerInfo(this, 'Executing getFileHistory command (repository URL):', repoCommand);
+					loggerDebug(this, 'getFileHistory (Strategy 3 - Repo URL) command:', repoCommand, 'CWD:', workingCopyRoot);
 					
 					const { stdout } = await execPromise(repoCommand, { cwd: workingCopyRoot });
 					loggerDebug(this, 'getFileHistory raw XML output (repo URL):', stdout);
 
 					entries = this.parseXmlLog(stdout);
-					loggerDebug(this, 'getFileHistory parsed entries (repo URL):', entries);
+					loggerDebug(this, 'getFileHistory parsed entries (repo URL):', entries.length);
 
 					if (entries.length > 0) {
 						// Enrich entries with size information
 						const entriesWithSize = await this.enrichHistoryWithSizes(filePath, entries);
 						return entriesWithSize;
 					}
+				} else {
+					loggerWarn(this, 'getFileHistory (Strategy 3 - Repo URL) could not determine repository root from svn info.');
 				}
 			} catch (repoError) {
-				lastError = repoError;
-				loggerError(this, `All getFileHistory strategies failed. Repository URL error:`, repoError.message);
+				lastError = repoError as Error;
+				const errorMessage = (repoError as Error).message || '';
+				if (isKnownNotFoundError(errorMessage)) {
+					loggerInfo(this, 'getFileHistory (Strategy 3 - Repo URL) failed as expected for new/uncommitted file:', errorMessage.split('\n')[0]);
+				} else {
+					loggerError(this, `getFileHistory (Strategy 3 - Repo URL) failed:`, errorMessage.split('\n')[0]);
+				}
 			}
 			
-			// If we reach here, all strategies failed
+			// If we reach here, all strategies failed or found no entries.
+			// The final decision to throw or return empty is handled by the outer catch.
 			if (lastError) {
-				throw lastError;
-			} else {
-				throw new Error('No file history found');
+				throw lastError; // Re-throw the last encountered error to be handled by the main catch block.
 			}
+			// If no error but also no entries, it implies the file has no history (e.g. added but not committed)
+			loggerInfo(this, `getFileHistory: No history found for "${filePath}" after all strategies and no errors thrown.`);
+			return [];
+
 		} catch (error) {
-			loggerError(this, 'getFileHistory error:', { filePath, error: error.message });
-			// Check if this is a "file not in SVN" error and preserve the original message
-			const errorMessage = error.message.toLowerCase();
-			if (errorMessage.includes('node was not found') || 
-				errorMessage.includes('is not under version control') ||
+			const errorMessage = (error as Error).message?.toLowerCase() || '';
+			// Log the actual error details for debugging, but only the first line for general info if it's a known not-found type.
+			const firstLineOfError = ((error as Error).message || '').split('\n')[0];
+
+			if (
+				isKnownNotFoundError(errorMessage) || // Consolidates checks for E160013, E195002, etc.
 				errorMessage.includes('no such file or directory') ||
-				errorMessage.includes('path not found') ||
-				errorMessage.includes('svn: e155010') || // node not found
-				errorMessage.includes('svn: e200009') || // node not found (different context)
-				errorMessage.includes('svn: e160013')) { // path not found
-				// Return empty array instead of throwing error for missing files
-				loggerInfo(this, 'File not found in SVN history, returning empty history');
+				errorMessage.includes('path not found') || // More generic path not found
+				errorMessage.includes('svn: e155010') || // node not found (another variant)
+				errorMessage.includes('svn: e200009')    // node not found (yet another variant)
+			) {
+				loggerInfo(this, `getFileHistory: File "${filePath}" not found in SVN history or has no committed revisions. Returning empty history. Detail: ${firstLineOfError}`);
 				return [];
+			} else {
+				// For unexpected errors, log the full error and re-throw.
+				loggerError(this, 'getFileHistory encountered an unexpected error:', { filePath, error: (error as Error).message });
+				throw new Error(`Failed to get file history for "${filePath}": ${(error as Error).message}`);
 			}
-			throw new Error(`Failed to get file history: ${error.message}`);
 		}
 	}
 	/**
@@ -437,7 +466,7 @@ export class SVNClient {
 	}
 
 	/**
-	 * Check if a file exists in SVN at a specific revision
+	 * Check if a file exists at a specific revision
 	 * This is useful for handling renamed/moved files gracefully
 	 */
 	private async fileExistsAtRevision(filePath: string, revision: string): Promise<boolean> {
@@ -1495,6 +1524,143 @@ export class SVNClient {
 		if (this.cacheInvalidationCallback) {
 			this.cacheInvalidationCallback();
 		}
+	}
+
+	// Add the new move method here
+	public async move(oldPath: string, newPath: string, options: SvnOperationOptions = {}): Promise<SvnCommandResult<string>> {
+		const absoluteOldPath = this.resolveAbsolutePath(oldPath);
+		const absoluteNewPath = this.resolveAbsolutePath(newPath);
+		const absoluteOldPathDir = dirname(absoluteOldPath);
+		const absoluteNewPathDir = dirname(absoluteNewPath);
+
+		loggerInfo(this, `Attempting SVN move: from "${oldPath}" to "${newPath}"`);
+
+		const workingCopyRoot = this.findSvnWorkingCopy(absoluteOldPath);
+		if (!workingCopyRoot) {
+			const msg = `Source path "${oldPath}" is not in an SVN working copy. No SVN move performed.`;
+			loggerInfo(this, msg); // Changed from loggerWarn to loggerInfo as it's a common case
+			// Return a result indicating skipped operation
+			return { success: true, output: msg, skipped: true, message: msg };
+		}
+
+		const destDirWorkingCopyRoot = this.findSvnWorkingCopy(absoluteNewPathDir);
+		if (!destDirWorkingCopyRoot || destDirWorkingCopyRoot !== workingCopyRoot) {
+			const msg = `Destination path "${newPath}" (parent: "${absoluteNewPathDir}") appears to be outside (found WC: ${destDirWorkingCopyRoot || 'none'}) or in a different SVN working copy than the source (source WC: ${workingCopyRoot}). SVN move with history preservation is typically within the same working copy.`;
+			loggerError(this, msg);
+			throw new SvnError(msg + " This operation may not preserve history or may require manual SVN commands for repository-level moves.");
+		}
+
+		const command = `${this.svnPath} move --parents "${absoluteOldPath}" "${absoluteNewPath}"`;
+		try {
+			loggerInfo(this, 'Executing SVN move command:', command, 'in CWD:', workingCopyRoot);
+			const { stdout, stderr } = await execPromise(command, { cwd: workingCopyRoot });
+
+			// Even if execPromise resolves, SVN might have put critical errors in stderr and exited with 0 (less common for E errors but possible for warnings)
+			if (stderr && /svn: E\d+:/.test(stderr)) {
+				// Check for specific skippable errors first
+				if (/svn: E155010:/.test(stderr) || /svn: E200009:/.test(stderr) || /not under version control/.test(stderr.toLowerCase()) || /is not a working copy file/.test(stderr.toLowerCase())) {
+					const msg = `SVN move skipped for source "${oldPath}": Source not versioned or does not exist in SVN. Detail: ${stderr.split('\n')[0]}`;
+					loggerInfo(this, msg);
+					this.invalidateCachesForPaths([oldPath, newPath, absoluteOldPathDir, absoluteNewPathDir]);
+					return { success: true, output: msg, skipped: true, message: msg };
+				} else if (/svn: E155033:/.test(stderr)) {
+					// Handle E155033 specifically as it was observed
+					const errLogMsg = `SVN move for "${oldPath}" to "${newPath}" failed with E155033: Target path issue. SVN stderr: ${stderr.split('\n')[0]}. SVN stdout: ${stdout || '[empty]'}`;
+					loggerError(this, errLogMsg);
+					this.invalidateCachesForPaths([oldPath, newPath, absoluteOldPathDir, absoluteNewPathDir]);
+					throw new SvnCommandError(command, -1, stderr); // Exit code unknown if execPromise didn't throw
+				}
+				// For other E-errors not caught by execPromise rejection (unlikely but defensive)
+				loggerError(this, 'SVN move command returned error on stderr despite resolving promise:', stderr);
+				this.invalidateCachesForPaths([oldPath, newPath, absoluteOldPathDir, absoluteNewPathDir]);
+				throw new SvnCommandError(command, -1, stderr);
+			}
+
+			loggerInfo(this, 'SVN move command stdout:', stdout || '[empty]');
+			if (stderr) loggerInfo(this, 'SVN move command stderr (info/warnings):', stderr);
+
+			this.invalidateCachesForPaths([oldPath, newPath, absoluteOldPathDir, absoluteNewPathDir]);
+			const successMsg = `Successfully SVN moved ${basename(oldPath)} to ${newPath}.`;
+			return { success: true, output: stdout || successMsg, message: successMsg };
+
+		} catch (error: any) {
+			this.invalidateCachesForPaths([oldPath, newPath, absoluteOldPathDir, absoluteNewPathDir]);
+
+			const stderrFromError = String(error.stderr || '');
+			const stdoutFromError = String(error.stdout || '');
+			const exitCode = typeof error.code === 'number' ? error.code : -1;
+
+			loggerError(this, `SVN move command execution failed for "${oldPath}" to "${newPath}":`, {
+				message: error.message,
+				code: exitCode,
+				stderr: stderrFromError.split('\n')[0], // Log first line for brevity
+				stdout: stdoutFromError
+			});
+
+			// Check for skippable errors (source not versioned/found)
+			if (/svn: E155010:/.test(stderrFromError) || /svn: E200009:/.test(stderrFromError) || /not under version control/.test(stderrFromError.toLowerCase()) || /is not a working copy file/.test(stderrFromError.toLowerCase())) {
+				const msg = `SVN move skipped for source "${oldPath}": Source not versioned or does not exist in SVN. Detail: ${stderrFromError.split('\n')[0]}`;
+				loggerInfo(this, msg);
+				return { success: true, output: msg, skipped: true, message: msg };
+			}
+
+			// Handle E155033 ("is not a directory") specifically
+			if (/svn: E155033:/.test(stderrFromError)) {
+				const errLogMsg = `SVN move for "${oldPath}" to "${newPath}" failed with E155033: Target path issue. SVN stderr: ${stderrFromError.split('\n')[0]}. SVN stdout: ${stdoutFromError || '[empty]'}`;
+				loggerError(this, errLogMsg); // Already logged above, this is more for the throw
+				throw new SvnCommandError(command, exitCode, stderrFromError); 
+			}
+			
+			// For other SVN errors caught by execPromise rejection
+			if (stderrFromError && /svn: E\d+:/.test(stderrFromError)) {
+				throw new SvnCommandError(command, exitCode, stderrFromError);
+			}
+
+			// Fallback for non-SVN errors or SVN errors not matching the pattern
+			throw new SvnError(`Failed to SVN move "${oldPath}" to "${newPath}": ${error.message || 'Unknown error'}`, command, stderrFromError);
+		}
+	}
+
+	private invalidateCachesForPaths(pathsToInvalidate: string[]) {
+		const uniqueAbsolutePaths = new Set<string>();
+
+		pathsToInvalidate.forEach(p => {
+			try {
+				const absP = this.resolveAbsolutePath(p);
+				uniqueAbsolutePaths.add(absP);
+				// Also invalidate parent directory if it's a file path
+				// For directories, the path itself is what we care about for status.
+				// findSvnWorkingCopy cache is more complex, clearing specific entries is best.
+				const dir = dirname(absP);
+				if (dir && dir !== absP) { // Ensure it's a parent and not the path itself (e.g. for root paths)
+					uniqueAbsolutePaths.add(dir);
+				}
+			} catch (e) {
+				loggerWarn(this, `Could not resolve path for cache invalidation: ${p} - ${e.message}`);
+			}
+		});
+
+		uniqueAbsolutePaths.forEach(absPath => {
+			loggerDebug(this, `Invalidating cache for: ${absPath}`);
+			this.statusRequestCache.delete(absPath); 
+			this.isFileInSvnResultCache.delete(absPath);
+			this.findWorkingCopyCache.delete(absPath); // findSvnWorkingCopy caches based on the input path
+
+			// Attempt to clear parent paths for findWorkingCopyCache as well, as structure might affect lookups
+			// This part needs to be careful not to over-invalidate or run too long.
+			let current = dirname(absPath);
+			while (current && current !== dirname(current) && current.startsWith(this.vaultPath)) {
+				this.findWorkingCopyCache.delete(current);
+				const parent = dirname(current);
+				if (parent === current) break; 
+				current = parent;
+			}
+		});
+
+		if (this.cacheInvalidationCallback) {
+			this.cacheInvalidationCallback();
+		}
+		loggerInfo(this, 'Caches invalidated for relevant paths:', Array.from(uniqueAbsolutePaths));
 	}
 }
 

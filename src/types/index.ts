@@ -202,6 +202,10 @@ export interface SvnCommandResult<T = string> {
     exitCode?: number;
     /** Execution time in milliseconds */
     executionTime?: number;
+    /** Optional message, can be used for warnings or additional info */
+    message?: string;
+    /** Indicates if the operation was skipped (e.g. file not in SVN) */
+    skipped?: boolean; 
 }
 
 /**
