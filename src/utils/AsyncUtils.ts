@@ -1,5 +1,15 @@
 import { AsyncResult, CancellationToken, DebouncedFunction } from '@/types';
 import { loggerDebug, loggerError } from '@/utils/obsidian-logger';
+import { exec, ExecOptions } from 'child_process';
+import { promisify } from 'util';
+
+// Promisify exec for async/await usage
+const execAsync = promisify(exec);
+
+export interface ExecPromiseResult {
+    stdout: string;
+    stderr: string;
+}
 
 /**
  * Async utilities for better error handling and performance
@@ -165,4 +175,29 @@ export class AsyncUtils {
 			)
 		]);
 	}
+}
+
+/**
+ * Executes a shell command and returns its stdout and stderr as a promise.
+ * @param command The command to execute.
+ * @param options Optional execution options.
+ * @returns A promise that resolves with an object containing stdout and stderr.
+ */
+export async function execPromise(command: string, options?: ExecOptions): Promise<{ stdout: string; stderr: string }> {
+    try {
+        const { stdout, stderr } = await execAsync(command, options);
+        // Ensure stdout and stderr are strings
+        const stdoutStr = Buffer.isBuffer(stdout) ? stdout.toString() : stdout;
+        const stderrStr = Buffer.isBuffer(stderr) ? stderr.toString() : stderr;
+        return { stdout: stdoutStr, stderr: stderrStr };
+    } catch (error) {
+        // Ensure error.stdout and error.stderr are strings if they exist
+        if (error.stdout) {
+            error.stdout = Buffer.isBuffer(error.stdout) ? error.stdout.toString() : error.stdout;
+        }
+        if (error.stderr) {
+            error.stderr = Buffer.isBuffer(error.stderr) ? error.stderr.toString() : error.stderr;
+        }
+        throw error;
+    }
 }

@@ -53,17 +53,17 @@ export class SVNStatusDisplay {
 		// This method now appends its content to statusEl, which is already part of the fragment.
 		// It doesn't call container.empty() anymore.
 		try {
-			const isWorkingCopy = await this.svnClient.isWorkingCopy(currentFile.path);
-			loggerDebug(this, 'isWorkingCopy check:', {
-				filePath: currentFile.path,
-				isWorkingCopy: isWorkingCopy
-			});
-			if (!isWorkingCopy) {
-				loggerDebug(this, "File not in working copy, showing icon message");
-				const notInWcEl = statusEl.createEl('span', { cls: 'svn-status-text' });
-				this.createStatusWithIcon(notInWcEl, SVNConstants.ICONS.NOT_IN_WORKING_COPY, SVNConstants.MESSAGES.NOT_IN_WORKING_COPY, SVNConstants.CSS_CLASSES.WARNING);
-				return;
-			}
+			// const isWorkingCopy = await this.svnClient.isWorkingCopy(currentFile.path); // Removed
+			// loggerDebug(this, 'isWorkingCopy check:', { // Removed
+			// 	filePath: currentFile.path, // Removed
+			// 	isWorkingCopy: isWorkingCopy // Removed
+			// }); // Removed
+			// if (!isWorkingCopy) { // Removed
+			// 	loggerDebug(this, "File not in working copy, showing icon message"); // Removed
+			// 	const notInWcEl = statusEl.createEl('span', { cls: 'svn-status-text' }); // Removed
+			// 	this.createStatusWithIcon(notInWcEl, SVNConstants.ICONS.NOT_IN_WORKING_COPY, SVNConstants.MESSAGES.NOT_IN_WORKING_COPY, SVNConstants.CSS_CLASSES.WARNING); // Removed
+			// 	return; // Removed
+			// }
 			
 			// Remove revision info since it's now shown in the pinned container
 			// Just show the status container for the status message
@@ -71,8 +71,7 @@ export class SVNStatusDisplay {
 			
 			const statusArray = await this.svnClient.getStatus(currentFile.path);
 			const fileStatus = statusArray.find(item => 
-				item.filePath.includes(currentFile.name) || 
-				item.filePath.endsWith(currentFile.path)
+				this.svnClient.comparePaths(item.filePath, currentFile.path)
 			);
 
 			if (fileStatus && fileStatus.status === SvnStatusCode.UNVERSIONED) {
@@ -152,8 +151,7 @@ export class SVNStatusDisplay {
 		}
 	}
 	private isSvnClientReady(): boolean {
-		return this.svnClient && 
-			   typeof this.svnClient.setVaultPath === 'function';
+		return !!this.svnClient;
 	}
 
 	/**

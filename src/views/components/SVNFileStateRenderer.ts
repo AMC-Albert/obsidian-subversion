@@ -2,6 +2,7 @@ import { TFile, Notice, ButtonComponent } from 'obsidian';
 import { SVNClient } from '../../services/SVNClient';
 import type ObsidianSvnPlugin from '../../main';
 import { CommitModal } from '../../modals';
+import { loggerError, loggerDebug } from '../../utils/obsidian-logger';
 
 export class SVNFileStateRenderer {
 	private plugin: ObsidianSvnPlugin;
@@ -33,17 +34,17 @@ export class SVNFileStateRenderer {
 			.setClass('mod-cta')
 			.onClick(async () => {
 				try {
-					await this.svnClient.addFile(currentFile.path);
+					await this.svnClient.add(currentFile.path, { addParents: true });
 					new Notice(`File ${currentFile.name} added to SVN`);
 					this.onRefresh();
 				} catch (error) {
-					error('General', 'Failed to add file to SVN:', error);
+					loggerError(this, 'Failed to add file to SVN:', error);
 					new Notice(`Failed to add file to SVN: ${error.message}`);
 				}
 			});
 	}
-
 	renderAddedButNotCommitted(container: HTMLElement, currentFile: TFile): void {
+		loggerDebug(this, 'renderAddedButNotCommitted called for file:', currentFile.path);
 		container.empty();
 		const settingItem = container.createEl('div', { cls: 'setting-item' });
 		const settingInfo = settingItem.createEl('div', { cls: 'setting-item-info' });
@@ -66,11 +67,11 @@ export class SVNFileStateRenderer {
 					`Add ${currentFile.name}`,
 					async (message: string) => {
 						try {
-							await this.svnClient.commitFile(currentFile.path, message);
+							await this.svnClient.commit([currentFile.path], message, { addParents: true });
 							new Notice(`File ${currentFile.name} committed successfully`);
 							this.onRefresh();
 						} catch (error) {
-							error('General', 'Failed to commit file:', error);
+							loggerError(this, 'Failed to commit file:', error);
 							new Notice(`Failed to commit: ${error.message}`);
 						}
 					}

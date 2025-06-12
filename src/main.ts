@@ -60,14 +60,25 @@ export default class ObsidianSvnPlugin extends Plugin {
 	 * Initialize the SVN client with proper vault path
 	 */
 	private initializeSvnClient() {
-		this.svnClient = new SVNClient(this.settings.svnBinaryPath);
-		
 		// Set the vault path if using FileSystemAdapter
 		const adapter = this.app.vault.adapter;
+		let vaultPath = '';
+		
 		if (adapter instanceof FileSystemAdapter) {
-			this.svnClient.setVaultPath(adapter.getBasePath());
+			vaultPath = adapter.getBasePath();
+			loggerDebug(this, 'initializeSvnClient: Vault path from FileSystemAdapter:', vaultPath);
+		} else {
+			loggerWarn(this, 'initializeSvnClient: Vault adapter is not FileSystemAdapter, type:', typeof adapter);
 		}
-	}	/**
+		
+		this.svnClient = new SVNClient(this.app, this.settings.svnBinaryPath, vaultPath);
+		
+		// Double-check that the vault path was set correctly
+		const actualVaultPath = this.svnClient.getVaultPath();
+		loggerDebug(this, 'initializeSvnClient: SVNClient vault path after construction:', actualVaultPath);
+	}
+
+	/**
 	 * Register all UI components (views, ribbon, settings)
 	 */
 	private registerUI() {
@@ -167,22 +178,30 @@ export default class ObsidianSvnPlugin extends Plugin {
 			this.notifyViewsOfSettingsChange();
 		}, 100);
 	}
-
 	/**
 	 * Update SVN client configuration
 	 */
 	private updateSvnClient() {
-		this.svnClient = new SVNClient(this.settings.svnBinaryPath);
-		
 		// Set the vault path if using FileSystemAdapter
 		const adapter = this.app.vault.adapter;
+		let vaultPath = '';
+		
 		if (adapter instanceof FileSystemAdapter) {
-			this.svnClient.setVaultPath(adapter.getBasePath());
+			vaultPath = adapter.getBasePath();
+			loggerInfo(this, 'updateSvnClient: Vault path from FileSystemAdapter:', vaultPath);
+		} else {
+			loggerWarn(this, 'updateSvnClient: Vault adapter is not FileSystemAdapter, type:', typeof adapter);
 		}
+		
+		this.svnClient = new SVNClient(this.app, this.settings.svnBinaryPath, vaultPath);
+		
+		// Double-check that the vault path was set correctly
+		const actualVaultPath = this.svnClient.getVaultPath();
+		loggerInfo(this, 'updateSvnClient: SVNClient vault path after construction:', actualVaultPath);
 		
 		// Don't automatically refresh views here - let user manually refresh if needed
 		// Automatic refresh on every settings keystroke creates race conditions
-		loggerDebug(this, 'SVN client updated, views will refresh on next user action');
+		loggerInfo(this, 'updateSvnClient: SVN client updated, views will refresh on next user action');
 	}
 
 	/**
@@ -285,14 +304,17 @@ export default class ObsidianSvnPlugin extends Plugin {
 			})
 		);
 	}
-	
 	/**
 	 * Handle file changes for status updates
 	 */
 	private handleFileChange(file: TFile) {
 		const activeFile = this.app.workspace.getActiveFile();
 		if (activeFile && file.path === activeFile.path) {
-			this.scheduleStatusRefresh();
+			// Invalidate cache for the modified file - this will automatically trigger UI refresh via cache invalidation callback
+			loggerDebug(this, `File modified: ${file.path} - invalidating cache (UI refresh will be triggered automatically)`);
+			this.svnClient.invalidateCacheForPath(file.path);
+			
+			// No need to call scheduleStatusRefresh() - the cache invalidation callback will handle it
 		}
 	}
 	
@@ -318,9 +340,11 @@ export default class ObsidianSvnPlugin extends Plugin {
 				if (!this.settings.autoCommit) return;
 
 				try {
-					const isWorkingCopy = await this.svnClient.isWorkingCopy(file.path);
-					if (isWorkingCopy) {
-						await this.svnClient.commitFile(file.path, this.settings.commitMessage);
+					// Use isFileInSvn to check if the file is under SVN control
+					const isUnderSvn = await this.svnClient.isFileInSvn(file.path);
+					if (isUnderSvn) {
+						// Use the standard commit method
+						await this.svnClient.commit([file.path], this.settings.commitMessage);
 						new Notice(`Auto-committed: ${file.name}.`);
 						  // Refresh status after auto-commit
 						setTimeout(() => {

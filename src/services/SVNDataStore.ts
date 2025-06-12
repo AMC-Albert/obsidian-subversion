@@ -2,7 +2,7 @@ import { TFile } from 'obsidian';
 import { SVNClient } from './SVNClient';
 import { SvnLogEntry, SvnInfo, SvnStatus, SvnStatusCode, SvnFileData as ImportedSvnFileData } from '../types';
 import { SVNStatusUtils } from '@/utils';
-import { loggerDebug, loggerInfo, loggerError, registerLoggerClass } from '@/utils/obsidian-logger';
+import { loggerDebug, loggerInfo, loggerError, loggerWarn, registerLoggerClass } from '@/utils/obsidian-logger';
 
 // Internal interface for cache entries, combining imported SvnFileData with store-specific fields
 interface DataStoreEntry extends ImportedSvnFileData {
@@ -29,15 +29,16 @@ export class SVNDataStore {
 	// Store direct status overrides to ensure fresh data is used
 	private directStatusMap = new Map<string, SvnStatus[]>();
 	private lastRefreshTime = new Map<string, number>();
-	private refreshThrottleMs = 200; // Minimum time between refreshes for same file
+	private refreshThrottleMs = 500; // Minimum time between refreshes for same file
 	// Track when cache was last cleared to invalidate cached data
 	private lastCacheClearTime = Date.now();
+	private cacheInvalidationCallback?: () => void;
 	constructor(svnClient: SVNClient) {
 		this.svnClient = svnClient;
 		registerLoggerClass(this, 'SVNDataStore');
 		// Register callback to clear DataStore cache when SVNClient cache is cleared
 		this.svnClient.setCacheInvalidationCallback(() => {
-			loggerInfo(this, 'Cache invalidation callback triggered from SVNClient');
+			loggerDebug(this, 'Cache invalidation callback triggered from SVNClient');
 			this.forceClearCache();
 		});
 	}
@@ -89,19 +90,16 @@ export class SVNDataStore {
 	 */
 	async loadFileData(file: TFile, options: DataLoadOptions = {}): Promise<DataStoreEntry> {
 		const filePath = file.path;
-
-		loggerInfo(this, 'loadFileData called:', {
+		loggerDebug(this, 'loadFileData called:', {
 			filePath,
 			hasLoadingPromise: this.loadingPromises.has(filePath),
 			hasCachedData: this.dataCache.has(filePath)
 		});
-		
-		// If already loading, return existing promise
+				// If already loading, return existing promise
 		if (this.loadingPromises.has(filePath)) {
-			loggerInfo(this, 'Returning existing loading promise for:', filePath);
+			loggerDebug(this, 'Returning existing loading promise for:', filePath);
 			return this.loadingPromises.get(filePath)!;
 		}
-
 		// Check if we have recent cached data
 		const cached = this.dataCache.get(filePath);
 		if (cached && !cached.isLoading) {
@@ -135,16 +133,15 @@ export class SVNDataStore {
 				}
 				// If shouldRefetch is true, execution falls through to performDataLoad
 			} else {
-				loggerDebug(this, 'Cached data invalidated by cache clear:', {
+				loggerDebug(this, 'Cached data invalidated by cache clear - data is stale:', {
 					filePath,
 					dataTime: cached.lastUpdateTime,
 					clearTime: this.lastCacheClearTime
 				});
 			}
 		}
-
 		// Create loading promise
-		loggerInfo(this, 'Creating new loading promise for:', filePath);
+		loggerDebug(this, 'Creating new loading promise for:', filePath);
 		const loadingPromise = this.performDataLoad(file, options);
 		this.loadingPromises.set(filePath, loadingPromise);
 
@@ -197,17 +194,18 @@ export class SVNDataStore {
 		this.dataCache.clear();
 		this.loadingPromises.clear();
 	}
-
 	/**
 	 * Force clear all cached data immediately (for use after SVN operations)
-	 */
-	forceClearCache(): void {
-		loggerInfo(this, 'Force clearing all cache data');
+	 */	forceClearCache(): void {
+		loggerDebug(this, 'Force clearing all cache data');
 		this.dataCache.clear();
 		this.loadingPromises.clear();
 		this.lastRefreshTime.clear();
 		this.directStatusMap.clear();
 		this.lastCacheClearTime = Date.now(); // Update clear timestamp
+		
+		// Notify the cache invalidation callback - this will trigger UI refresh
+		this.triggerCacheInvalidatedNotification();
 	}
 
 	/**
@@ -217,6 +215,25 @@ export class SVNDataStore {
 		this.svnClient = svnClient;
 		// Clear cache since client changed
 		this.clearCache();
+	}
+
+	/**
+	 * Set callback for cache invalidation notifications that should trigger UI refresh
+	 */
+	setCacheInvalidationCallback(callback: () => void): void {
+		this.cacheInvalidationCallback = callback;
+	}
+
+	/**
+	 * Trigger cache invalidation notification to connected UI
+	 */
+	private triggerCacheInvalidatedNotification(): void {
+		// This will trigger the callback registered in the constructor, 
+		// which notifies the UI system of cache invalidation
+		loggerDebug(this, 'Triggering cache invalidation notification');
+		if (this.cacheInvalidationCallback) {
+			this.cacheInvalidationCallback();
+		}
 	}
 
 	private async performDataLoad(file: TFile, options: DataLoadOptions): Promise<DataStoreEntry> {
@@ -291,7 +308,7 @@ export class SVNDataStore {
 				: Promise.resolve(null);
 
 			const historyPromise = isFileInSvn && options.includeHistory !== false
-				? this.svnClient.getFileHistory(filePath).catch((err) => {
+				? this.svnClient.getFileHistory(filePath).catch((err: Error) => {
 					// Log the raw error and its type more robustly
 					console.error('SVNDataStore: Raw error caught in historyPromise:', err);
 					loggerError(this, 'Error fetching file history in historyPromise. See raw error in console.', {
@@ -303,7 +320,8 @@ export class SVNDataStore {
 					});
 					return []; // Return empty array on error
 				})
-				: Promise.resolve([]);			// Wait for all data to load
+				: Promise.resolve([]);
+				// Wait for all data to load
 			const [status, svnInfoData, historyData] = await Promise.all([ // Renamed svnInfo to svnInfoData to avoid conflict with info field
 				statusPromise,
 				infoPromise,
@@ -316,24 +334,27 @@ export class SVNDataStore {
 				svnInfoDataPresent: !!svnInfoData,
 				historyDataCount: historyData?.length,
 				rawHistoryData: historyData // Log the raw historyData
-			});
-
-			// IMPORTANT: Re-validate isFileInSvn based on actual status results
-			// If status is empty and there's no info, the file is definitely unversioned
+			});			// IMPORTANT: Re-validate isFileInSvn based on actual status results
+			// If status is empty AND there's no info, the file might be unversioned
+			// But if svnInfo exists, the file is definitely in SVN (even with empty status)
 			let finalIsFileInSvn = isFileInSvn;
-			if (isFileInSvn && status.length === 0 && !svnInfoData) { // Using svnInfoData here
+			if (isFileInSvn && status.length === 0 && !svnInfoData) {
 				loggerInfo(this, 'Re-evaluating isFileInSvn: empty status and no info suggests unversioned file');
 				// Double-check with a direct status call to be absolutely sure
 				try {
 					const recheck = await this.svnClient.isFileInSvn(filePath);
 					finalIsFileInSvn = recheck;
-					loggerInfo(this, 'Re-check result:', { filePath, originalCheck: isFileInSvn, recheckResult: recheck });
+					loggerDebug(this, 'Re-check result:', { filePath, originalCheck: isFileInSvn, recheckResult: recheck });
 				} catch (error) {
 					finalIsFileInSvn = false;
-					loggerInfo(this, 'Re-check failed, assuming unversioned:', error.message);
+					loggerDebug(this, 'Re-check failed, assuming unversioned:', error.message);
 				}
-			}			// Compute derived properties with type-safe status checking
-			const hasLocalChanges = status.some(s => SVNStatusUtils.hasChanges(s.status));
+			} else if (svnInfoData) {
+				// If we have svnInfo, the file is definitely in SVN
+				finalIsFileInSvn = true;
+				loggerDebug(this, 'File has svnInfo, confirming it is in SVN:', { filePath, url: svnInfoData.url });
+			}// Compute derived properties with type-safe status checking
+			const hasLocalChanges = status.some((s: SvnStatus) => SVNStatusUtils.hasChanges(s.status));
 			const currentRevision = svnInfoData?.revision || null; // Using svnInfoData here
 
 			// Create final data object

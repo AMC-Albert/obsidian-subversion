@@ -1,14 +1,14 @@
 import { Notice, WorkspaceLeaf, setTooltip } from 'obsidian';
 import { ButtonComponent } from 'obsidian';
 import { SVNClient } from '../../services/SVNClient';
-import { DiffModal } from '../../modals/DiffModal';
+import { DiffModal, ConfirmCheckoutModal, ConflictResolutionModal } from '../../modals';
 import { SvnLogEntry, SvnStatusCode } from '@/types';
 import { loggerDebug, loggerInfo, loggerError, loggerWarn, registerLoggerClass } from '@/utils/obsidian-logger';
 
 export class SVNHistoryRenderer {
 	private svnClient: SVNClient;
 	private plugin: any;
-	private refreshCallback: () => void;
+	public refreshCallback: () => void;
 	private currentFilePathForPreviews: string | null = null;
 
 	constructor(svnClient: SVNClient, plugin: any, refreshCallback: () => void) {
@@ -38,17 +38,24 @@ export class SVNHistoryRenderer {
 			diffBtn.buttonEl.addEventListener('click', (evt) => {
 				evt.preventDefault();
 				evt.stopPropagation();
-				this.showDiff(filePath, history[index - 1].revision, entry.revision);
+				this.showDiff(filePath, history[index - 1].revision.toString(), entry.revision.toString());
 			});
 			buttonsAdded = true;
 		}
-
 		// Checkout button - only show if this is not the currently checked out revision
 		if (currentRevision === undefined || entry.revision !== currentRevision) {
+			const isFutureRevision = currentRevision && entry.revision > currentRevision;
 			const checkoutBtn = new ButtonComponent(actionsEl)
-				.setIcon('download')
-				.setTooltip(`Checkout revision ${entry.revision}`)
+				.setIcon(isFutureRevision ? 'fast-forward' : 'download')
+				.setTooltip(isFutureRevision ? 
+					`Update to future revision ${entry.revision}` : 
+					`Checkout revision ${entry.revision}`)
 				.setClass('clickable-icon')
+			
+			if (isFutureRevision) {
+				checkoutBtn.buttonEl.addClass('svn-future-action');
+			}
+			
 			checkoutBtn.buttonEl.addEventListener('click', (evt) => {
 				evt.preventDefault();
 				evt.stopPropagation();
@@ -58,74 +65,74 @@ export class SVNHistoryRenderer {
 		}
 		
 		// Add preview image if available
-		if (entry.previewImagePath && this.currentFilePathForPreviews && previewContainer) {
+		// Check if a preview should be attempted based on current file context
+		if (this.currentFilePathForPreviews && previewContainer) {
 			const imgEl = previewContainer.createEl('img', { cls: 'svn-history-preview-thumbnail' });
 			setTooltip(imgEl, `Click to enlarge preview for revision ${entry.revision}`);
 			
 			// Asynchronously load and set the image source
+			// Use the main file path (this.currentFilePathForPreviews) and the revision from the log entry.
+			// The SVNSidecarManager will determine the expected preview file name.
 			this.svnClient.getLocalPreviewImage(
-				this.currentFilePathForPreviews, // The working path of the main file (e.g., .blend file)
-				entry.previewImagePath,       // Repo-relative path of the preview image
-				entry.revision.toString()     // Revision number
+				this.currentFilePathForPreviews, 
+				entry.revision // Pass revision number directly
 			).then(localPath => {
 				if (localPath) {
 					// Convert absolute path to vault-relative path for Obsidian
 					let vaultRelativePath = localPath;
-					if (this.plugin.app.vault.adapter.basePath) {
-						const basePath = this.plugin.app.vault.adapter.basePath;
-						if (localPath.startsWith(basePath)) {
-							vaultRelativePath = localPath.substring(basePath.length + 1).replace(/\\/g, '/');
-						}
+					const adapter = this.plugin.app.vault.adapter as any; // Cast to any for basePath
+					if (adapter.basePath && localPath.startsWith(adapter.basePath)) {
+						vaultRelativePath = localPath.substring(adapter.basePath.length + 1).replace(/\\/g, '/');
 					}
 					
-					// Obsidian specific way to get a usable URL for local plugin files
-					const imgSrc = this.plugin.app.vault.adapter.getResourcePath(vaultRelativePath);
-					loggerDebug(this, 'Preview image paths:', {
+					const imgSrc = adapter.getResourcePath(vaultRelativePath);
+					loggerDebug(this, 'Preview image paths for history:', {
+						mainFile: this.currentFilePathForPreviews,
+						revision: entry.revision,
 						localPath,
-						basePath: this.plugin.app.vault.adapter.basePath,
+						basePath: adapter.basePath,
 						vaultRelativePath,
 						imgSrc
 					});
 					
 					imgEl.src = imgSrc;
 					
-					// Add click handler for larger view
 					imgEl.addEventListener('click', (evt) => {
 						evt.preventDefault();
 						evt.stopPropagation();
 						this.showPreviewModal(imgSrc, entry.revision);
 					});
 				} else {
-					imgEl.style.display = 'none'; // Hide if not found or error
-					loggerWarn(this, `Could not load local preview for r${entry.revision}, path: ${entry.previewImagePath}`);
+					imgEl.style.display = 'none'; 
+					loggerWarn(this, `Could not get local preview for ${this.currentFilePathForPreviews} at r${entry.revision}.`);
 				}
-			}).catch(err => {
+			}).catch((err: any) => {
 				imgEl.style.display = 'none';
-				loggerError(this, `Error loading preview image for r${entry.revision}:`, err);
+				loggerError(this, `Error loading preview image for ${this.currentFilePathForPreviews} at r${entry.revision}:`, err);
 			});
 		}
 		return buttonsAdded;
 	}
 
-	private showDiff(filePath: string, fromRevision: number, toRevision: number): void {
+	private showDiff(filePath: string, fromRevision: string, toRevision: string): void {
 		// Use getDiff method from SVNClient - it accepts an optional revision parameter
-		this.svnClient.getDiff(filePath, toRevision.toString()).then((diffContent: string) => {
+		this.svnClient.getDiff(filePath, fromRevision, toRevision).then((diffContent: string) => {
 			new DiffModal(this.plugin.app, diffContent, `r${fromRevision} → r${toRevision}`).open();
 		}).catch((err: any) => {
 			loggerError(this, 'Error showing diff:', err);
 			// Could show a notice here
 		});
 	}
-	
-	async checkoutRevision(filePath: string, revision: string): Promise<void> {
+		async checkoutRevision(filePath: string, revision: string): Promise<void> {
 		try {
 			// Check if file has modifications before checkout
 			let hadModifications = false;
 			try {
 				const statusArray = await this.svnClient.getStatus(filePath);
-						// Check if we have any results and if any file shows modifications
+				// Check if we have any results and if any file shows modifications
 				hadModifications = statusArray && statusArray.length > 0 && 
-								   statusArray.some(item => item.status === SvnStatusCode.MODIFIED);
+								   statusArray.some(item => this.svnClient.comparePaths(item.filePath, filePath) && 
+								   	(item.status === SvnStatusCode.MODIFIED || item.status === SvnStatusCode.CONFLICTED));
 				
 				// Fallback: If status check returned empty, assume no modifications
 				if (!statusArray || statusArray.length === 0) {
@@ -135,32 +142,74 @@ export class SVNHistoryRenderer {
 			} catch (statusError) {
 				// Continue with checkout even if status check fails
 				loggerError(this, 'Could not check file status before checkout:', statusError);
+			}			// If file has modifications, ask user for confirmation
+			if (hadModifications) {
+				return new Promise<void>((resolve) => {
+					new ConfirmCheckoutModal(
+						this.plugin.app,
+						filePath,
+						revision,
+						() => {
+							// User confirmed - continue with checkout
+							this.performCheckout(filePath, revision, hadModifications).then(resolve);
+						},
+						() => {
+							// User cancelled
+							new Notice('Checkout cancelled by user.');
+							resolve();
+						}
+					).open();
+				});
 			}
-			
+
+			// No modifications - proceed directly
+			await this.performCheckout(filePath, revision, hadModifications);
+		} catch (error: any) {
+			loggerError(this, 'Error checking out revision:', error);
+			new Notice(`Failed to checkout revision ${revision}: ${error.message}`, 5000);
+		}
+	}
+
+	private async performCheckout(filePath: string, revision: string, hadModifications: boolean): Promise<void> {
+		try {
 			// Perform the checkout
-			await this.svnClient.checkoutRevision(filePath, revision);
+			const result = await this.svnClient.updateToRevision(filePath, revision);
+			
+			// Check if the result indicates conflicts
+			const hasConflicts = result && (result.includes('conflicts') || result.includes('conflict'));
 			
 			// Verify the checkout worked by checking the current revision
+			let actualRevision: number | undefined;
 			try {
 				const info = await this.svnClient.getInfo(filePath);
-				if (info && info.revision.toString() !== revision) {
-					loggerError(this, `Checkout may have failed: expected r${revision}, got r${info.revision}`);
+				actualRevision = info?.revision;
+				if (actualRevision && actualRevision.toString() !== revision) {
+					loggerWarn(this, `Checkout may not have completed fully: expected r${revision}, got r${actualRevision}`);
 				}
 			} catch (verifyError) {
 				loggerError(this, 'Could not verify checkout success:', verifyError);
 			}
-			  // Force Obsidian to reload the file from disk
-			await this.forceFileReload(filePath);
 			
-			// Show appropriate success message
-			if (hadModifications) {
+			// Force Obsidian to reload the file from disk
+			await this.forceFileReload(filePath);
+					// Show appropriate success/warning message
+			if (hasConflicts) {
 				new Notice(
-					`Checked out revision ${revision}. Your local modifications were discarded.\n` +
-					`To recover: Press Ctrl+Z to undo, then commit your changes first.`,
-					8000  // Show for 8 seconds
+					`Checked out revision ${revision} but conflicts occurred.\n` +
+					`Opening conflict resolution dialog...`,
+					4000
+				);
+				// Handle conflicts automatically
+				setTimeout(() => {
+					this.handleConflicts(filePath);
+				}, 500);
+			} else if (hadModifications) {
+				new Notice(
+					`Checked out revision ${revision}. Your local modifications were discarded.\n`,
+					5000
 				);
 			} else {
-				new Notice(`Checked out revision ${revision}.`);
+				new Notice(`Successfully checked out revision ${revision}.`);
 			}
 			
 			loggerInfo(this, `Checked out revision ${revision} for ${filePath}`);
@@ -172,14 +221,14 @@ export class SVNHistoryRenderer {
 			setTimeout(() => {
 				loggerInfo(this, '[SVN HistoryRenderer] Triggering refresh after checkout');
 				this.refreshCallback();
-			}, 100);
+			}, 200); // Increased delay to allow for conflict resolution
 		} catch (error: any) {
 			loggerError(this, 'Error checking out revision:', error);
 			new Notice(`Failed to checkout revision ${revision}: ${error.message}`, 5000);
 		}
 	}
 	
-	private async forceFileReload(filePath: string): Promise<void> {
+	public async forceFileReload(filePath: string): Promise<void> {
 		try {
 			// Get the TFile object for the changed file
 			const file = this.plugin.app.vault.getAbstractFileByPath(filePath);
@@ -240,6 +289,68 @@ export class SVNHistoryRenderer {
 		};
 		
 		modal.open();
+	}
+
+	/**
+	 * Handle conflict resolution after a checkout
+	 */
+	private async handleConflicts(filePath: string): Promise<void> {
+		try {
+			const statusArray = await this.svnClient.getStatus(filePath);
+			const hasConflicts = statusArray && statusArray.some(item => 
+				this.svnClient.comparePaths(item.filePath, filePath) && 
+				item.status === SvnStatusCode.CONFLICTED
+			);			if (hasConflicts) {
+				new ConflictResolutionModal(
+					this.plugin.app,
+					filePath,
+					async (resolution: 'working' | 'theirs') => {
+						try {
+							await this.resolveConflict(filePath, resolution);
+						} catch (error: any) {
+							loggerError(this, 'Error resolving conflict:', error);
+							new Notice(`Failed to resolve conflict: ${error.message}`, 5000);
+						}
+					}
+				).open();
+			}
+		} catch (error: any) {
+			loggerError(this, 'Error handling conflicts:', error);
+		}
+	}
+
+	/**
+	 * Resolve conflicts using SVN resolve command
+	 */
+	private async resolveConflict(filePath: string, resolution: 'working' | 'theirs' | 'mine'): Promise<void> {
+		try {
+			// Map resolution type to SVN accept option
+			const acceptOption = resolution === 'working' ? 'working' : 
+								 resolution === 'theirs' ? 'theirs-full' : 'mine-full';
+			
+			const absolutePath = this.svnClient.resolveAbsolutePath(filePath);
+			const workingCopyRoot = this.svnClient.findSvnWorkingCopy(absolutePath);
+			
+			if (!workingCopyRoot) {
+				throw new Error(`Not in SVN working copy: ${filePath}`);
+			}
+
+			const command = `svn resolve --accept ${acceptOption} "${absolutePath}"`;
+			
+			loggerInfo(this, 'Resolving conflict:', { command, resolution });
+			
+			const { execPromise } = await import('@/utils/AsyncUtils');
+			await execPromise(command, { cwd: workingCopyRoot });
+			
+			new Notice(`Conflict resolved using ${resolution} version.`);
+			
+			// Force file reload after conflict resolution
+			await this.forceFileReload(filePath);
+			
+		} catch (error: any) {
+			loggerError(this, 'Error resolving conflict:', error);
+			new Notice(`Failed to resolve conflict: ${error.message}`, 5000);
+		}
 	}
 }
 

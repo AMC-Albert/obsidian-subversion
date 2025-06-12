@@ -275,34 +275,19 @@ export class SVNToolbar {
 		}
 
 		try {
-			// Check if file is in working copy (repository exists)
-			const isWorkingCopy = await this.svnClient.isWorkingCopy(currentFile.path);
-			if (!isWorkingCopy) {
-				// Not in SVN working copy - disable all SVN operations, keep refresh/settings enabled
-				this.setButtonsDisabled({
-					'add': true,
-					'commit': true,
-					'revert': true,
-					'diff': true,
-					'info': true,
-					'remove': true,
-					'refresh': false,  // Always enabled
-					'settings': false  // Always enabled
-				});
-				return;
-			}
-
 			// Check if file is tracked by SVN
 			const isFileInSvn = await this.svnClient.isFileInSvn(currentFile.path);
-			
+			const status = await this.svnClient.getStatus(currentFile.path);
+			const fileIsModified = status.some(s => this.svnClient.comparePaths(s.filePath, currentFile.path) && s.status === 'M');
+
 			if (isFileInSvn) {
-				// File is already tracked - disable add, enable others
+				// File is already tracked - disable add, enable others based on modification state
 				this.setButtonsDisabled({
 					'add': true,      // Can't add already tracked file
-					'commit': false,  // Can commit changes
-					'revert': false,  // Can revert changes
-					'diff': false,    // Can show diff
-					'info': false,    // Can show info
+					'commit': !fileIsModified,  // Can commit if modified
+					'revert': !fileIsModified,  // Can revert if modified
+					'diff': !fileIsModified,    // Can show diff if modified
+					'info': false,    // Can always show info for tracked file
 					'remove': false,  // Can remove from SVN
 					'refresh': false, // Always enabled
 					'settings': false // Always enabled

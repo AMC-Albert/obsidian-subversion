@@ -127,7 +127,7 @@ export class SVNView extends ItemView {
 		this.viewRenderer = new SVNViewRenderer(
 			this.plugin,
 			this.svnClient,
-			this.containerEl,
+			this.containerEl, // Pass the main container element here
 			this.toolbar,
 			this.fileActions,
 			this.statusDisplay,
@@ -163,12 +163,14 @@ export class SVNView extends ItemView {
 			hasData: !!state.data,
 			error: state.error,
 			isLoading: state.isLoading,
-			currentFile: this.currentFile?.path
+			currentFile: this.currentFile?.path,
+			isSetupMode: this.isSetupMode // Added for context
 		});
 		
 		// If in repository setup mode, skip state-driven UI changes
-		if (this.isSetupMode) {
-			loggerInfo(this, 'In setup mode, skipping state change');
+		// UNLESS the state itself indicates an error, in which case we should show it.
+		if (this.isSetupMode && !state.error) {
+			loggerInfo(this, 'In setup mode and no error, skipping state change');
 			return;
 		}
 		// Prevent overlapping state change handlers
@@ -206,9 +208,12 @@ export class SVNView extends ItemView {
 			// Update status display and toolbar states without fetching new SVN data
 			const currentState = this.uiController.getCurrentState();
 			// Update status area
+			// Ensure layoutManager and statusContainer are available via viewRenderer
+			const layoutManager = this.viewRenderer.getLayoutManager();
+			const statusContainer = layoutManager.getStatusContainer();
 			await this.viewRenderer.getStatusManager().updateStatusDisplay(
 				currentState,
-				this.viewRenderer.getLayoutManager().getStatusContainer(),
+				statusContainer,
 				this.currentFile
 			);
 			// Refresh toolbar button states for current file
@@ -330,9 +335,15 @@ export class SVNView extends ItemView {
 	 */
 	async refreshStatus(): Promise<void> {
 		loggerInfo(this, 'refreshStatus called');
-		if (!this.viewRenderer) return; // Guard
-		// Call refreshStatus on statusManager via viewRenderer
-		await this.viewRenderer.getStatusManager().updateStatusDisplay(this.uiController.getCurrentState(), this.viewRenderer.getLayoutManager().getStatusContainer(), this.currentFile);
+		if (!this.viewRenderer || !this.viewRenderer.getStatusManager() || !this.viewRenderer.getLayoutManager()) return; // Guard
+		
+		const statusContainer = this.viewRenderer.getLayoutManager().getStatusContainer();
+		if (!statusContainer) {
+			loggerError(this, "Status container not found during refreshStatus");
+			return;
+		}
+
+		await this.viewRenderer.getStatusManager().updateStatusDisplay(this.uiController.getCurrentState(), statusContainer, this.currentFile);
 	}
 
 	/**

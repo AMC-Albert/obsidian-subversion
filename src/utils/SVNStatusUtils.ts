@@ -1,5 +1,5 @@
 import { SVNConstants } from './SVNConstants';
-import { SvnStatusCode } from '@/types';
+import { SvnStatusCode, SvnPropertyStatus } from '@/types';
 
 /**
  * Centralized SVN status utilities with type safety
@@ -85,6 +85,41 @@ export class SVNStatusUtils {
 	static isVersioned(status: SvnStatusCode): boolean {
 		return status !== SvnStatusCode.UNVERSIONED && 
 			   status !== SvnStatusCode.IGNORED;
+	}
+
+	/**
+	 * Convert status character to SvnStatusCode enum
+	 */
+	static fromChar(char: string): SvnStatusCode {
+		switch (char) {
+			case 'M': return SvnStatusCode.MODIFIED;
+			case 'A': return SvnStatusCode.ADDED;
+			case 'D': return SvnStatusCode.DELETED;
+			case 'R': return SvnStatusCode.REPLACED;
+			case 'C': return SvnStatusCode.CONFLICTED;
+			case '?': return SvnStatusCode.UNVERSIONED;
+			case '!': return SvnStatusCode.MISSING;
+			case 'I': return SvnStatusCode.IGNORED;
+			case 'X': return SvnStatusCode.EXTERNAL;
+			case ' ': return SvnStatusCode.NORMAL;
+			default:
+				// Consider logging a warning for unknown status characters
+				return SvnStatusCode.UNVERSIONED; // Or a specific 'UNKNOWN' enum if added
+		}
+	}
+
+	/**
+	 * Convert property status character to SvnPropertyStatus enum
+	 */
+	static propStatusFromChar(char: string): SvnPropertyStatus {
+		switch (char) {
+			case 'M': return SvnPropertyStatus.MODIFIED;
+			case 'C': return SvnPropertyStatus.CONFLICTED;
+			case ' ': return SvnPropertyStatus.NORMAL;
+			default:
+				// Consider logging a warning for unknown property status characters
+				return SvnPropertyStatus.NORMAL; // Or a specific 'UNKNOWN' enum if added
+		}
 	}
 }
 

@@ -43,6 +43,6 @@ Before using the plugin, you need to specify the path to your SVN binary. You ca
 
 ## Debugging
 
-In Developer Console (`Ctrl+Shift+I`), run `window.DEBUG.enable('sidecars')`
+In Developer Console (`Ctrl+Shift+I`), run `window.DEBUG['subversion'].enable()`
 
 To learn more, see [obsidian-logger](https://github.com/AMC-Albert/obsidian-logger).

@@ -4,6 +4,7 @@ import type ObsidianSvnPlugin from '../../main';
 import { CheckoutModal } from '../../modals/CheckoutModal';
 import { join } from 'path';
 import { loggerDebug, loggerInfo, loggerError, registerLoggerClass } from '@/utils/obsidian-logger';
+import { execPromise } from '../../utils/AsyncUtils';
 
 export class SVNRepositoryHandler {
     private plugin: ObsidianSvnPlugin;
@@ -205,13 +206,10 @@ export class SVNRepositoryHandler {
     private async checkoutRepository(repoPath: string, currentFile: TFile | null): Promise<void> {
         try {
             const vaultPath = this.svnClient.getVaultPath();
-            const { exec } = require('child_process');
-            const { promisify } = require('util');
-            const execPromise = promisify(exec);
 
             // Checkout the repository to the vault directory
             const command = `svn checkout "file:///${repoPath.replace(/\\/g, '/')}" "${vaultPath}"`;
-            await execPromise(command);
+            await execPromise(command, { cwd: vaultPath }); // Pass cwd to execPromise
             
             new Notice('Repository checked out successfully');
             this.onRefresh();
@@ -222,9 +220,6 @@ export class SVNRepositoryHandler {
     }    private async initWorkingCopy(repoPath: string, currentFile: TFile | null): Promise<void> {
         try {
             const vaultPath = this.svnClient.getVaultPath();
-            const { exec } = require('child_process');
-            const { promisify } = require('util');
-            const execPromise = promisify(exec);
 
             // Initialize the vault as a working copy pointing to the repository
             const repoUrl = `file:///${repoPath.replace(/\\/g, '/')}`;
@@ -267,9 +262,6 @@ export class SVNRepositoryHandler {
     }    private async checkoutExternalRepository(repoUrl: string, currentFile: TFile | null): Promise<void> {
         try {
             const vaultPath = this.svnClient.getVaultPath();
-            const { exec } = require('child_process');
-            const { promisify } = require('util');
-            const execPromise = promisify(exec);
 
             const command = `svn checkout "${repoUrl}" "${vaultPath}" --force`;
             await execPromise(command, { cwd: vaultPath });

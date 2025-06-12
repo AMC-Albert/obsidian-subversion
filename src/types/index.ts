@@ -220,6 +220,24 @@ export interface SvnOperationOptions {
     args?: string[];
     /** Whether to include output in the result */
     includeOutput?: boolean;
+    /** Whether to add parent directories if they don't exist (for svn add) */
+    addParents?: boolean;
+    /** Whether the operation should be recursive (for svn revert, update, etc.) */
+    recursive?: boolean;
+    /** For 'remove', whether to keep the local copy of the file after removing from SVN */
+    keepLocal?: boolean;
+    /** For 'commit', specific revision to commit (rarely used) */
+    revision?: string;
+    /** For 'update', specific revision to update to */
+    updateRevision?: string; // Consider if this should be merged with 'revision' or kept separate
+    /** For 'diff', the first revision to compare */
+    revision1?: string;
+    /** For 'diff', the second revision to compare */
+    revision2?: string;
+    /** For 'log', the maximum number of log entries to retrieve */
+    limit?: number;
+    /** Force operation, may overwrite or skip safety checks */
+    force?: boolean;
 }
 
 /**

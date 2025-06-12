@@ -223,6 +223,7 @@ export class SVNViewStateManager {
 		}
 		return changed;
 	}
+	
 	/**
 	 * Determine the type of content being displayed
 	 */
@@ -237,14 +238,29 @@ export class SVNViewStateManager {
 		const fileDataInstance = state.data; // fileDataInstance is of type SVNFileData
 
 		if (!fileDataInstance.isWorkingCopy) return 'repository-setup';
-
 		// Check for ADDED status first, as this is a specific state for files in the process of being versioned.
 		// The file path comparison needs to be robust.
 		const isAddedNotCommitted = fileDataInstance.status?.some((s: any) => 
 			s.status === SvnStatusCode.ADDED && 
 			(s.filePath === fileDataInstance.filePath || this.comparePaths(s.filePath, fileDataInstance.filePath))
 		);
+		
+		// Debug logging for ADDED status detection
+		if (fileDataInstance.status && fileDataInstance.status.length > 0) {
+			loggerDebug(this, 'Content type detection - checking for ADDED status:', {
+				filePath: fileDataInstance.filePath,
+				statusEntries: fileDataInstance.status.map((s: any) => ({ 
+					path: s.filePath, 
+					status: s.status,
+					isAdded: s.status === SvnStatusCode.ADDED,
+					pathMatches: s.filePath === fileDataInstance.filePath || this.comparePaths(s.filePath, fileDataInstance.filePath)
+				})),
+				isAddedNotCommitted
+			});
+		}
+		
 		if (isAddedNotCommitted) {
+			loggerDebug(this, 'Content type: returning added-not-committed for', fileDataInstance.filePath);
 			return 'added-not-committed';
 		}
 
@@ -261,7 +277,14 @@ export class SVNViewStateManager {
 		}
 
 		// File is in SVN and not 'added-not-committed'
+		// Debug logging for committed files with no history
 		if (!fileDataInstance.history || fileDataInstance.history.length === 0) {
+			loggerDebug(this, 'File is in SVN but has no history - this is normal for committed files', {
+				filePath: fileDataInstance.filePath,
+				isFileInSvn: fileDataInstance.isFileInSvn,
+				statusCount: fileDataInstance.status?.length || 0,
+				hasHistory: !!fileDataInstance.history?.length
+			});
 			return 'no-history';
 		}
 

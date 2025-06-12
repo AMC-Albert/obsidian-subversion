@@ -456,6 +456,20 @@
     border-radius: var(--radius-s);
 }
 
+/* Current checkout revision indicator */
+.svn-history-item .svn-revision.svn-current-checkout {
+    background: var(--color-green);
+    color: var(--text-on-accent);
+    border: 2px solid var(--color-green);
+    font-weight: var(--font-weight-bold);
+}
+
+.svn-history-item .svn-revision.svn-current-checkout::after {
+    content: " (current)";
+    font-size: var(--font-ui-smaller);
+    opacity: 0.9;
+}
+
 .svn-history-item .svn-author {
     font-size: var(--font-ui-small);
     font-weight: var(--font-weight-medium);
@@ -601,4 +615,35 @@ button:disabled,
 	max-width: 90vw;
 	max-height: 90vh;
 	object-fit: contain;
+}
+
+/* Future revision notice */
+.svn-future-notice {
+    border: 1px solid var(--color-orange);
+    border-radius: var(--radius-s);
+    padding: var(--size-4-2);
+    margin-bottom: var(--size-4-3);
+    display: flex;
+    align-items: center;
+    gap: var(--size-4-1);
+}
+
+.svn-future-notice-text {
+	color: var(--text-warning);
+}
+
+/* Modal styles - minimal */
+.conflict-choice {
+	margin-bottom: 8px;
+	padding: 8px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 4px;
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+}
+
+.conflict-choice > div {
+	flex: 1;
 }

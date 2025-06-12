@@ -80,7 +80,7 @@ export class SVNViewRenderer {
 		this.layoutManager = new SVNViewLayoutManager(containerEl);
 		this.statusManager = new SVNViewStatusManager(svnClient, statusDisplay, this.stateManager, fileStateRenderer);
 		this.historyManager = new SVNViewHistoryManager(
-			svnClient, 
+			// svnClient, // Removed svnClient from here
 			plugin, 
 			historyRenderer, 
 			fileStateRenderer, 

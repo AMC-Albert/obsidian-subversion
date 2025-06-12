@@ -1,5 +1,4 @@
 import { TFile, setTooltip } from 'obsidian';
-import { SVNClient } from '../../services/SVNClient';
 import { SvnFileData } from '@/types';
 import { UIState } from '../SVNUIController';
 import { SVNHistoryRenderer, SVNFileStateRenderer, SVNRepositoryHandler } from '.';
@@ -11,20 +10,17 @@ import { loggerDebug, loggerInfo, loggerError, registerLoggerClass } from '@/uti
  * Extracted from FileHistoryView to reduce complexity
  */
 export class SVNViewHistoryManager {
-	private svnClient: SVNClient;
 	private plugin: ObsidianSvnPlugin;
 	private historyRenderer: SVNHistoryRenderer;
 	private fileStateRenderer: SVNFileStateRenderer;
 	private repositoryHandler: SVNRepositoryHandler;
 
 	constructor(
-		svnClient: SVNClient, 
 		plugin: ObsidianSvnPlugin,
 		historyRenderer: SVNHistoryRenderer,
 		fileStateRenderer: SVNFileStateRenderer,
 		repositoryHandler: SVNRepositoryHandler
 	) {
-		this.svnClient = svnClient;
 		this.plugin = plugin;
 		this.historyRenderer = historyRenderer;
 		this.fileStateRenderer = fileStateRenderer;
@@ -112,11 +108,48 @@ export class SVNViewHistoryManager {
 				}
 				this.fileStateRenderer.renderAddedButNotCommitted(container, currentFile);
 				break;
-			case 'no-history':
+				case 'no-history':
 				// This implies state.data exists, isFileInSvn is true, and history is empty.
+				// This is normal for committed files that don't have history loaded yet
 				if (lastContentType !== 'no-history' || !container.querySelector('.svn-no-history')) {
 					container.empty();
-					container.createEl('p', { text: 'No history found for this file.', cls: 'svn-no-history' });
+					
+					// Create a more informative display for committed files
+					const statusContainer = container.createEl('div', { cls: 'svn-no-history-container' });
+					
+					if (state.data?.svnInfo?.revision) {
+						// File is committed - show current revision info
+						const revisionInfo = statusContainer.createEl('div', { cls: 'svn-revision-info' });
+						revisionInfo.createEl('div', { 
+							text: 'File is committed to SVN', 
+							cls: 'svn-status-title' 
+						});
+						revisionInfo.createEl('div', { 
+							text: `Current revision: ${state.data.svnInfo.revision}`, 
+							cls: 'svn-revision-number' 
+						});
+						
+						if (state.data.svnInfo.lastChangedDate) {
+							const date = new Date(state.data.svnInfo.lastChangedDate);
+							revisionInfo.createEl('div', { 
+								text: `Last changed: ${date.toLocaleDateString()} ${date.toLocaleTimeString()}`, 
+								cls: 'svn-last-changed' 
+							});
+						}
+						
+						if (state.data.svnInfo.lastChangedAuthor) {
+							revisionInfo.createEl('div', { 
+								text: `Author: ${state.data.svnInfo.lastChangedAuthor}`, 
+								cls: 'svn-author' 
+							});
+						}
+					} else {
+						// Fallback for files without detailed info
+						statusContainer.createEl('div', { 
+							text: 'File is in SVN but no history data is available.', 
+							cls: 'svn-no-history-message' 
+						});
+					}
 				}
 				break;
 			case 'history':
@@ -183,9 +216,7 @@ export class SVNViewHistoryManager {
 				lastContentTypeSVC: lastContentType, // SVC for "Subversion" to avoid conflict
 				historyContentActuallyChangedSVC: historyContentActuallyChanged // SVC for "Subversion"
 			});
-			container.empty(); // Clear the container specifically for the history list
-			
-			// Check if we need to show pinned revision
+			container.empty(); // Clear the container specifically for the history list			// Check if we need to show pinned revision
 			let pinnedRevision: any = null;
 			let remainingHistory = data.history;
 			
@@ -197,6 +228,48 @@ export class SVNViewHistoryManager {
 				if (pinnedRevision) {
 					// Remove the pinned revision from the main list
 					remainingHistory = data.history.filter(entry => entry.revision !== currentRevision);
+				}
+			}
+					// Ensure history is sorted by revision number in descending order (newest first)
+			// This is critical when showing future revisions to maintain chronological order
+			remainingHistory = remainingHistory.sort((a, b) => b.revision - a.revision);
+			
+			loggerDebug(this, 'History ordering after sorting:', {
+				totalEntries: data.history.length,
+				remainingEntries: remainingHistory.length,
+				firstRevision: remainingHistory[0]?.revision,
+				lastRevision: remainingHistory[remainingHistory.length - 1]?.revision,
+				pinnedRevision: pinnedRevision?.revision
+			});
+			
+			// Check if we have future revisions (revisions newer than current checkout)
+			const currentRevision = data.svnInfo?.revision;
+			const hasFutureRevisions = currentRevision && data.history.some(entry => entry.revision > currentRevision);			// Show notice if displaying future revisions
+			if (hasFutureRevisions) {
+				const noticeEl = container.createEl('div', { cls: 'svn-future-notice' });
+				noticeEl.createEl('span', { 
+					text: '⚠️ Past revision checked out. Future revisions are available.',
+					cls: 'svn-future-notice-text'
+				});
+				
+				// Add "Back to HEAD" button
+				if (currentFile) {
+					const backToHeadBtn = noticeEl.createEl('button', { 
+						text: 'Back to HEAD',
+						cls: 'svn-back-to-head-btn'
+					});
+					backToHeadBtn.addEventListener('click', async () => {
+						try {
+							await this.plugin.svnClient.updateToHead(currentFile.path);
+							// Use the history renderer's forceFileReload method
+							await this.historyRenderer.forceFileReload(currentFile.path);
+							// Refresh the view using the history renderer's callback
+							this.historyRenderer.refreshCallback();
+						} catch (error: any) {
+							console.error('Failed to update to HEAD:', error);
+							// You might want to show a notice here
+						}
+					});
 				}
 			}
 			
@@ -276,12 +349,15 @@ export class SVNViewHistoryManager {
 			}
 		}
 	}
-
 	/**
 	 * Create a single history item
 	 */
 	private createHistoryItem(historyList: HTMLElement, entry: any, index: number, fullHistory: any[], currentFile: TFile | null, currentRevision?: number): void {
 		const listItem = historyList.createEl('li', { cls: 'svn-history-item' });
+		
+		// Determine revision status for styling
+		const isFutureRevision = currentRevision && entry.revision > currentRevision;
+		const isCurrentCheckout = currentRevision && entry.revision === currentRevision;
 		
 		// Create preview container on the left (if preview exists)
 		let previewEl: HTMLElement | null = null;
@@ -293,11 +369,28 @@ export class SVNViewHistoryManager {
 		const contentEl = listItem.createEl('div', { cls: 'svn-history-list-info-container' });
 		// Create header with revision info
 		const headerEl = contentEl.createEl('div', { cls: 'svn-history-header' });
+		
+		// Add revision styling based on status
+		let revisionClasses = 'svn-revision';
+		if (isFutureRevision) {
+			revisionClasses += ' svn-future-revision';
+		} else if (isCurrentCheckout) {
+			revisionClasses += ' svn-current-checkout';
+		}
+		
 		const revisionEl = headerEl.createEl('span', { 
 			text: `r${entry.revision}`,
-			cls: 'svn-revision'
+			cls: revisionClasses
 		});
-		setTooltip(revisionEl, `Revision ${entry.revision}`);
+		
+		// Enhanced tooltips based on revision status
+		if (isFutureRevision) {
+			setTooltip(revisionEl, `Revision ${entry.revision} (future - newer than current checkout r${currentRevision})`);
+		} else if (isCurrentCheckout) {
+			setTooltip(revisionEl, `Revision ${entry.revision} (currently checked out)`);
+		} else {
+			setTooltip(revisionEl, `Revision ${entry.revision}`);
+		}
 		
 		const authorEl = headerEl.createEl('span', { 
 			text: entry.author,
@@ -394,12 +487,11 @@ export class SVNViewHistoryManager {
 		
 		// Create main content container
 		const contentEl = pinnedItem.createEl('div', { cls: 'svn-history-list-info-container' });
-		
-		// Create header with revision info
+				// Create header with revision info
 		const revisionHeaderEl = contentEl.createEl('div', { cls: 'svn-history-header' });
 		const revisionEl = revisionHeaderEl.createEl('span', { 
 			text: `r${pinnedRevision.revision}`,
-			cls: 'svn-revision svn-pinned-revision'
+			cls: 'svn-revision svn-pinned-revision svn-current-checkout'
 		});
 		setTooltip(revisionEl, `Currently checked out revision ${pinnedRevision.revision}`);
 		

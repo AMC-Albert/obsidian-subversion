@@ -44,14 +44,14 @@ export class SVNInfoPanel {
 		this.panelElement.empty();
 		
 		try {
-			const isWorkingCopy = await this.svnClient.isWorkingCopy(currentFile.path);
-			if (!isWorkingCopy) {
-				this.panelElement.createEl('p', { 
-					text: 'File is not in an SVN working copy',
-					cls: 'svn-info-warning'
-				});
-				return;
-			}
+			// const isWorkingCopy = await this.svnClient.isWorkingCopy(currentFile.path); // Removed this check
+			// if (!isWorkingCopy) {
+			// 	this.panelElement.createEl('p', { 
+			// 		text: 'File is not in an SVN working copy',
+			// 		cls: 'svn-info-warning'
+			// 	});
+			// 	return;
+			// }
 
 			const isFileInSvn = await this.svnClient.isFileInSvn(currentFile.path);
 			if (!isFileInSvn) {

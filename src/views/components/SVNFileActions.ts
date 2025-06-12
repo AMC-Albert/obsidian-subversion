@@ -4,6 +4,7 @@ import type ObsidianSvnPlugin from '../../main';
 import { CommitModal, ConfirmRevertModal, ConfirmRemoveModal, DiffModal } from '../../modals';
 import { SVNInfoPanel } from './SVNInfoPanel';
 import { SVNToolbar } from './SVNToolbar';
+import { loggerError } from '@/utils/obsidian-logger';
 
 export class SVNFileActions {
 	private plugin: ObsidianSvnPlugin;
@@ -48,15 +49,17 @@ export class SVNFileActions {
 		const modal = new CommitModal(
 			this.plugin.app,
 			'Quick Commit',
-			`Update ${currentFile.name}`,			async (message: string) => {                try {
-					await this.svnClient.commitFile(currentFile!.path, message);
-					new Notice(`File ${currentFile!.name} committed successfully.`);
+			`Update ${currentFile.name}`,
+			async (message: string) => {
+				try {
+					await this.svnClient.commit([currentFile.path], message, { addParents: true });
+					new Notice(`File ${currentFile.name} committed successfully.`);
 					// Refresh the view immediately - debouncing is handled in FileHistoryView
 					this.onRefresh();
 					// Update button states after commit
 					await this.updateButtonStates(currentFile);
 				} catch (error) {
-					error('General', 'Failed to commit file:', error);
+					loggerError(this, 'Failed to commit file:', error);
 					new Notice(`Failed to commit: ${error.message}`);
 				}
 			}
@@ -75,7 +78,7 @@ export class SVNFileActions {
 			const modal = new DiffModal(this.plugin.app, currentFile.name, diff);
 			modal.open();
 		} catch (error) {
-			error('General', 'Failed to get diff:', error);
+			loggerError(this, 'Failed to get diff:', error);
 			new Notice(`Failed to get diff: ${error.message}`);
 		}
 	}
@@ -88,7 +91,7 @@ export class SVNFileActions {
 
 		const revertAction = async () => {
 			try {
-				await this.svnClient.revertFile(currentFile!.path);
+				await this.svnClient.revert([currentFile!.path]);
 				
 				// Reload the file content in the editor
 				const content = await this.plugin.app.vault.adapter.read(currentFile!.path);
@@ -101,9 +104,8 @@ export class SVNFileActions {
 				this.onRefresh();
 				// Update button states after revert
 				await this.updateButtonStates(currentFile);
-				
-			} catch (error) {
-				error('General', 'Failed to revert file:', error);
+						} catch (error) {
+				loggerError(this, 'Failed to revert file:', error);
 				new Notice(`Failed to revert: ${error.message}`);
 			}
 		};
@@ -126,7 +128,7 @@ export class SVNFileActions {
 		if (!currentFile || !this.isSvnClientReady()) return;
 		const modal = new ConfirmRemoveModal(this.plugin.app, currentFile.name, async () => {
 			try {
-				await this.svnClient.removeFile(currentFile!.path);
+				await this.svnClient.remove([currentFile!.path], { keepLocal: false });
 				new Notice(`File removed from SVN: ${currentFile!.name}`);
 				
 				// Refresh the view to update status
@@ -134,7 +136,7 @@ export class SVNFileActions {
 				// Update button states since file is no longer tracked
 				await this.updateButtonStates(currentFile);
 			} catch (error: any) {
-				error('General', 'Error removing file from SVN:', error);
+				loggerError(this, 'Error removing file from SVN:', error);
 				new Notice(`Error: ${error.message || 'Failed to remove file from SVN.'}`);
 			}
 		});
@@ -192,13 +194,13 @@ export class SVNFileActions {
 			return;
 		}
 		try {
-			await this.svnClient.add(currentFile.path);
+			await this.svnClient.add(currentFile.path, { addParents: true });
 			new Notice(`File ${currentFile.name} added to version control.`);
 			this.onRefresh();
 			// Update button states since file is now tracked
 			await this.updateButtonStates(currentFile);
 		} catch (error: any) {
-			error('General', 'Failed to add file:', error);
+			loggerError(this, 'Failed to add file:', error);
 			new Notice(`Failed to add file: ${error.message}`);
 		}
 	}
@@ -281,11 +283,7 @@ export class SVNFileActions {
 	}
 
 	private isSvnClientReady(): boolean {
-		return this.svnClient && 
-			   this.plugin.svnClient && 
-			   this.svnClient === this.plugin.svnClient &&
-			   // Check if vault path is set (simple way to verify client is configured)
-			   typeof this.svnClient.setVaultPath === 'function';
+		return !!this.svnClient;
 	}
 }
 

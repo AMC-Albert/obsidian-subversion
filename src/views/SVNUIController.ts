@@ -21,17 +21,39 @@ export class SVNUIController {
 		isLoading: false,
 		showLoading: false,
 		data: null,
-		error: null
-	};
+		error: null	};
 	
 	private uiUpdateCallbacks = new Set<(state: UIState) => void>();
 	private unsubscribeDataStore: (() => void) | null = null;
 	private lastStateUpdateTime = 0;
 	private updateThrottleMs = 100; // Minimum time between UI updates
-		constructor(plugin: ObsidianSvnPlugin, svnClient: SVNClient) {
+	private cacheInvalidationDebounceTimer: number | null = null;
+	private cacheInvalidationDebounceMs = 250; // Debounce cache invalidation refreshes
+	
+	constructor(plugin: ObsidianSvnPlugin, svnClient: SVNClient) {
 		this.plugin = plugin;
 		this.svnClient = svnClient;
 		this.dataStore = new SVNDataStore(svnClient);
+		
+		// Set up cache invalidation callback with debouncing to prevent excessive refreshes
+		this.dataStore.setCacheInvalidationCallback(() => {
+			loggerDebug(this, 'Cache invalidated, scheduling debounced refresh');
+			
+			// Clear any existing debounce timer
+			if (this.cacheInvalidationDebounceTimer) {
+				clearTimeout(this.cacheInvalidationDebounceTimer);
+			}
+			
+			// Schedule debounced refresh
+			this.cacheInvalidationDebounceTimer = window.setTimeout(() => {
+				loggerDebug(this, 'Executing debounced cache invalidation refresh');
+				this.refreshCurrentFile().catch(error => {
+					loggerError(this, 'Error refreshing current file after cache invalidation:', error);
+				});
+				this.cacheInvalidationDebounceTimer = null;
+			}, this.cacheInvalidationDebounceMs);
+		});
+		
 		registerLoggerClass(this, 'SVNUIController');
 	}
 
@@ -245,7 +267,6 @@ export class SVNUIController {
 			}
 		});
 	}
-
 	/**
 	 * Cleanup
 	 */
@@ -254,7 +275,15 @@ export class SVNUIController {
 			this.unsubscribeDataStore();
 			this.unsubscribeDataStore = null;
 		}
-		this.uiUpdateCallbacks.clear();	}    private updateUIState(newState: Partial<UIState>): void {
+		
+		// Clear debounce timer
+		if (this.cacheInvalidationDebounceTimer) {
+			clearTimeout(this.cacheInvalidationDebounceTimer);
+			this.cacheInvalidationDebounceTimer = null;
+		}
+		
+		this.uiUpdateCallbacks.clear();
+	}private updateUIState(newState: Partial<UIState>): void {
 		const now = Date.now();
 		
 		// Throttle UI updates to prevent rapid-fire calls
